@@ -21,14 +21,6 @@ type TreeNode struct {
 	Left, Right *TreeNode
 }
 
-//func (b *Block) Y() hash.Hash {
-//	return b.y
-//}
-//
-//func (b *Block) SetY(y hash.Hash) {
-//	b.y = y
-//}
-
 func CreateGenesis() *Block {
 	return &Block{Parent: nil, Hash: sha256.New()}
 }
