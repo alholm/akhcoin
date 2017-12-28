@@ -2,11 +2,11 @@ package blockchain
 
 import (
 	"crypto/sha256"
-	"hash"
+	"fmt"
 )
 
 type Block struct {
-	Hash         hash.Hash
+	Hash         string
 	Parent       *Block
 	Transactions TreeNode
 }
@@ -22,13 +22,13 @@ type TreeNode struct {
 }
 
 func CreateGenesis() *Block {
-	return &Block{Parent: nil, Hash: sha256.New()}
+	return &Block{Parent: nil, Hash: Hash("genesis")}
 }
 
 func NewBlock() *Block {
 	var rootNode TreeNode
 	rootNode = collectTransactions()
-	block := Block{Hash: sha256.New(), Transactions: rootNode}
+	block := Block{Hash: Hash("TODO: block contents hash"), Transactions: rootNode}
 	return &block
 }
 
@@ -38,4 +38,8 @@ func collectTransactions() TreeNode {
 	t := Transaction{"me", "someone", 100}
 	return TreeNode{T: t}
 
+}
+
+func Hash(str string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(str)))
 }

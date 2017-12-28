@@ -5,9 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
-	"time"
-
 	"github.com/libp2p/go-libp2p-crypto"
 	inet "github.com/libp2p/go-libp2p-net"
 	"github.com/libp2p/go-libp2p-peer"
@@ -18,6 +15,7 @@ import (
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
 	"github.com/multiformats/go-multicodec"
 	json "github.com/multiformats/go-multicodec/json"
+	"akhcoin/blockchain"
 )
 
 const protocol = "/akh/1.0.0"
@@ -27,14 +25,25 @@ type MyHost struct {
 	network *swarm.Network
 }
 
+type Message interface {
+	fmt.Stringer
+	MsgText() string
+}
 
-
-// Message is a serializable/encodable object that we will send
+// MyMessage is a serializable/encodable object that we will send
 // on a Stream.
-type Message struct {
+type MyMessage struct {
 	Msg    string
 	Index  int
 	HangUp bool
+}
+
+func (m *MyMessage) String() string {
+	return m.Msg
+}
+
+func (m *MyMessage) MsgText() string {
+	return m.Msg
 }
 
 // streamWrap wraps a libp2p stream. We encode/decode whenever we
@@ -71,17 +80,7 @@ func WrapStream(s inet.Stream) *WrappedStream {
 	}
 }
 
-// messages that will be sent between the hosts.
-var conversationMsgs = []string{
-	"Hello!",
-	"Hey!",
-	"How are you doing?",
-	"9",
-	"8",
-	"7",
-}
-
-func MakeRandomHost(port int) MyHost {
+func StartHost(port int) MyHost {
 	// Ignoring most errors for brevity
 	// See echo example for more details and better implementation
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
@@ -92,8 +91,7 @@ func MakeRandomHost(port int) MyHost {
 	ps.AddPubKey(pid, pub)
 	n, _ := swarm.NewNetwork(context.Background(),
 		[]ma.Multiaddr{listen}, pid, ps, nil)
-	//myHost := MyHost{*bhost.New(n)}
-	myHost := MyHost{bhost.BasicHost{}, n} //memory waste
+	myHost := MyHost{*bhost.New(n), n}
 	return myHost
 }
 
@@ -101,54 +99,29 @@ func (h *MyHost) Start() {
 	h.BasicHost = *bhost.New(h.network)
 }
 
-
-func (h *MyHost) AddPeer(peerInfo *ps.PeerInfo){
+func (h *MyHost) AddPeer(peerInfo *ps.PeerInfo) {
 	h.Peerstore().AddAddrs(peerInfo.ID, peerInfo.Addrs, ps.PermanentAddrTTL)
 }
 
-func main() {
-	// Choose random ports between 10000-10100
-	rand.Seed(666)
-	port1 := rand.Intn(100) + 10000
-	port2 := port1 + 1
-
-	// Make 2 hosts
-	h1 := MakeRandomHost(port1)
-	h2 := MakeRandomHost(port2)
-	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), ps.PermanentAddrTTL)
-	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), ps.PermanentAddrTTL)
-
-	log.Printf("This is a conversation between %s and %s\n", h1.ID(), h2.ID())
-
-	SetStreamHandler(h2)
-
-	// Create new stream from h1 to h2 and start the conversation
-	stream, err := h1.NewStream(context.Background(), h2.ID(), protocol)
-	if err != nil {
-		log.Fatal(err)
-	}
-	wrappedStream := WrapStream(stream)
-	// This sends the first message
-	SendMessage(0, wrappedStream)
-	// We keep the conversation on the created stream so we launch
-	// this to handle any responses
-	HandleStream(wrappedStream)
-	// When we are done, close the stream on our side and exit.
-	stream.Close()
-}
-func SetStreamHandler(h2 MyHost) {
+func SetStreamHandler(h2 MyHost, handler func(ws *WrappedStream)) {
 	// Define a stream handler for host number 2
 	h2.SetStreamHandler(protocol, func(stream inet.Stream) {
 		log.Printf("%s: Received a stream", h2.ID())
 		wrappedStream := WrapStream(stream)
 		defer stream.Close()
-		HandleStream(wrappedStream)
+		handler(wrappedStream)
 	})
 }
 
-// receiveMessage reads and decodes a message from the stream
-func receiveMessage(ws *WrappedStream) (*Message, error) {
-	var msg Message
+func SendMessage(msg interface{}, ws *WrappedStream) error {
+	err := ws.enc.Encode(msg)
+	// Because output is buffered with bufio, we need to flush!
+	ws.w.Flush()
+	return err
+}
+
+func receiveMessage(ws *WrappedStream) (*MyMessage, error) {
+	var msg MyMessage
 	err := ws.dec.Decode(&msg)
 	if err != nil {
 		return nil, err
@@ -156,42 +129,50 @@ func receiveMessage(ws *WrappedStream) (*Message, error) {
 	return &msg, nil
 }
 
-// SendMessage encodes and writes a message to the stream
-func SendMessage(index int, ws *WrappedStream) error {
-	msg := &Message{
-		Msg:    conversationMsgs[index],
-		Index:  index,
-		HangUp: index >= len(conversationMsgs)-1,
-	}
-
-	err := ws.enc.Encode(msg)
-	// Because output is buffered with bufio, we need to flush!
-	ws.w.Flush()
-	return err
+type GetBlockMessage struct {
+	Message
 }
 
-// HandleStream is a for loop which receives and then sends a message
-// an artificial delay of 500ms happens in-between.
-// When Message.HangUp is true, it exists. This will close the stream
-// on one of the sides. The other side's receiveMessage() will error
-// with EOF, thus also breaking out from the loop.
-func HandleStream(ws *WrappedStream) {
-	for {
-		// Read
-		msg, err := receiveMessage(ws)
-		if err != nil {
-			break
-		}
-		pid := ws.stream.Conn().LocalPeer()
-		log.Printf("%d %s says: %s\n", msg.Index, pid, msg.Msg)
-		time.Sleep(500 * time.Millisecond)
-		if msg.HangUp {
-			break
-		}
-		// Send response
-		err = SendMessage(msg.Index+1, ws)
-		if err != nil {
-			break
-		}
+func HandleGetBlockStream(ws *WrappedStream) {
+	var msg GetBlockMessage
+	err := ws.dec.Decode(&msg)
+	if err != nil {
+		log.Fatalln(err)
+		return
 	}
+	log.Printf("%T message recieved", msg)
+
+	hash := blockchain.Hash("New Genesis")
+	log.Printf("Hash generated: %s", hash)
+	block := blockchain.Block{Hash: hash}
+	err = SendMessage(block, ws)
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
+func (h *MyHost) GetBlock(peerID peer.ID) *blockchain.Block {
+	// Create new stream from h1 to h2 and start the conversation
+	stream, err := h.NewStream(context.Background(), peerID, "/akh/1.0.0")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	wrappedStream := WrapStream(stream)
+	// This sends the first message
+	msg := &GetBlockMessage{}
+	SendMessage(msg, wrappedStream)
+	// We keep the conversation on the created stream so we launch
+	// this to handle any responses
+	var block blockchain.Block
+	err = wrappedStream.dec.Decode(&block)
+	if err != nil {
+		log.Fatalln(err)
+		return nil
+	}
+	pid := wrappedStream.stream.Conn().LocalPeer()
+	log.Printf("%s says: %t %s\n", pid, msg, block.Hash)
+	// When we are done, close the stream on our side and exit.
+	stream.Close()
+
+	return &block
 }

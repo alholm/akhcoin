@@ -7,7 +7,6 @@ import (
 	"flag"
 	"log"
 	"github.com/libp2p/go-libp2p-peerstore"
-	"context"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/libp2p/go-libp2p-peer"
 	"bufio"
@@ -100,12 +99,12 @@ func main() {
 
 	fmt.Printf("Peer: %s, port: %d, bye!\n", *remotePeerAddr, *port)
 
-	host := p2p.MakeRandomHost(*port)
-
-	host.Start()
-	p2p.SetStreamHandler(host)
-
+	host := p2p.StartHost(*port)
+	p2p.SetStreamHandler(host, p2p.HandleGetBlockStream)
 	fmt.Printf("%s : %s\n", host.Addrs()[0], host.ID().Pretty())
+	/////
+
+	//chain = downloadUtil.downloadExisting blocks
 
 	for {
 		reader := bufio.NewReader(os.Stdin)
@@ -114,45 +113,34 @@ func main() {
 		if text == "exit\n" {
 			break
 		} else {
-			sendSmth(*remotePeerAddr, *remotePeerID, host)
+			peers := discoverPeers(*remotePeerAddr, *remotePeerID)
+			for _, peerInfo := range peers {
+				host.AddPeer(&peerInfo)
+				block := host.GetBlock(peers[0].ID)
+				fmt.Printf("Recieved block hash: %s", block.Hash)
+			}
 		}
-		fmt.Println(text)
 	}
+
+	//dpos.startMining
 
 	//<-make(chan struct{}) // hang forever
 
 }
-func sendSmth(remotePeerAddr string, remotePeerID string, host p2p.MyHost) {
+func discoverPeers(remotePeerAddr string, remotePeerID string) []peerstore.PeerInfo {
 	fmt.Printf("Sending to %s : %s;\n", remotePeerAddr, remotePeerID)
+	peers := make([]peerstore.PeerInfo, 0, 10) //magic constant
 	if len(remotePeerAddr) > 0 && len(remotePeerID) > 0 {
-
 		split := strings.Split(remotePeerAddr, ":")
 		addrStr := fmt.Sprintf("/ip4/%s/tcp/%s", split[0], split[1])
 		fmt.Printf("Sending to %s;\n", addrStr)
-		addr, _ := ma.NewMultiaddr(addrStr) //"/ip4/127.0.0.1/tcp/9000"
-
-		decID, err := peer.IDB58Decode(remotePeerID) //"QmcHWzenJP3B2jrvEDGk9Gdbw964LdrQCTZDDoT4nePbBU"
-
+		addr, _ := ma.NewMultiaddr(addrStr)
+		decID, err := peer.IDB58Decode(remotePeerID)
 		if err != nil {
 			log.Fatal(err)
 		}
-
 		peerInfo := peerstore.PeerInfo{ID: decID, Addrs: []ma.Multiaddr{addr}}
-
-		host.AddPeer(&peerInfo)
-
-		// Create new stream from h1 to h2 and start the conversation
-		stream, err := host.NewStream(context.Background(), peerInfo.ID, "/akh/1.0.0")
-		if err != nil {
-			log.Fatalln(err)
-		}
-		wrappedStream := p2p.WrapStream(stream)
-		// This sends the first message
-		p2p.SendMessage(0, wrappedStream)
-		// We keep the conversation on the created stream so we launch
-		// this to handle any responses
-		p2p.HandleStream(wrappedStream)
-		// When we are done, close the stream on our side and exit.
-		stream.Close()
+		peers = append(peers, peerInfo)
 	}
+	return peers
 }
