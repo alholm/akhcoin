@@ -17,7 +17,7 @@ import (
 type Node interface {
 	Vote(sign string, addr string)
 
-	Produce() *Block
+	Produce(*Block) *Block
 
 	Receive(*Block)
 
@@ -26,21 +26,21 @@ type Node interface {
 
 type AkhNode struct {
 	transactionsPool map[*Transaction]bool
-	blockchain       []*Block
-	sign             string
+	Genesis          *Block
+	Head             *Block
 }
 
 func (*AkhNode) Vote(sign string, addr string) {
 	panic("implement me")
 }
 
-func (*AkhNode) Produce() *Block {
-	return NewBlock()
+func (*AkhNode) Produce(parent *Block) *Block {
+	return NewBlock(parent)
 }
 
 func (n *AkhNode) Receive(b *Block) {
 	Verify(b)
-	n.blockchain = append(n.blockchain, b)
+	//n.blockchain = append(n.blockchain, b)
 }
 
 func Verify(block *Block) error {
@@ -53,12 +53,10 @@ func (n *AkhNode) ReceiveTransaction(t *Transaction) {
 }
 
 func NewAkhNode() *AkhNode {
-	node := AkhNode{
+	return &AkhNode{
 		transactionsPool: make(map[*Transaction]bool),
-		blockchain:       initBlockchain(),
-		sign:             "",
+		Genesis:          CreateGenesis(),
 	}
-	return &node
 }
 func initBlockchain() []*Block {
 	existingBlocks, size := downloadExistingBlocks()
@@ -99,12 +97,16 @@ func main() {
 
 	fmt.Printf("Peer: %s, port: %d, bye!\n", *remotePeerAddr, *port)
 
+	node := NewAkhNode()
 	host := p2p.StartHost(*port)
-	p2p.SetStreamHandler(host, p2p.HandleGetBlockStream)
+	p2p.SetStreamHandler(host, p2p.HandleGetBlockStream, node.Genesis)
 	fmt.Printf("%s : %s\n", host.Addrs()[0], host.ID().Pretty())
 	/////
 
 	//chain = downloadUtil.downloadExisting blocks
+
+
+	node.Head = node.Genesis
 
 	for {
 		reader := bufio.NewReader(os.Stdin)
@@ -112,12 +114,20 @@ func main() {
 		text, _ := reader.ReadString('\n')
 		if text == "exit\n" {
 			break
+		} else if text == "p\n" {
+			node.Head = NewBlock(node.Head)
 		} else {
 			peers := discoverPeers(*remotePeerAddr, *remotePeerID)
 			for _, peerInfo := range peers {
 				host.AddPeer(&peerInfo)
 				block := host.GetBlock(peers[0].ID)
-				fmt.Printf("Recieved block hash: %s", block.Hash)
+				for block != nil {
+					Validate(block, node.Head)
+					fmt.Printf("Recieved block, hash: %s\n", block.Hash)
+					transaction := block.Transactions.Right.T
+					fmt.Printf("%s sent %d to %s\n", transaction.Sender, transaction.Amount, transaction.Recipient)
+					block = block.Next
+				}
 			}
 		}
 	}

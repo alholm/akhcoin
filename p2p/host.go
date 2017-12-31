@@ -103,13 +103,13 @@ func (h *MyHost) AddPeer(peerInfo *ps.PeerInfo) {
 	h.Peerstore().AddAddrs(peerInfo.ID, peerInfo.Addrs, ps.PermanentAddrTTL)
 }
 
-func SetStreamHandler(h2 MyHost, handler func(ws *WrappedStream)) {
+func SetStreamHandler(h2 MyHost, handler func(ws *WrappedStream, genesis *blockchain.Block), lastBlock *blockchain.Block) {
 	// Define a stream handler for host number 2
 	h2.SetStreamHandler(protocol, func(stream inet.Stream) {
 		log.Printf("%s: Received a stream", h2.ID())
 		wrappedStream := WrapStream(stream)
 		defer stream.Close()
-		handler(wrappedStream)
+		handler(wrappedStream, lastBlock)
 	})
 }
 
@@ -133,22 +133,37 @@ type GetBlockMessage struct {
 	Message
 }
 
-func HandleGetBlockStream(ws *WrappedStream) {
+type AckMessage struct {
+	Message
+}
+
+func HandleGetBlockStream(ws *WrappedStream, genesis *blockchain.Block) {
 	var msg GetBlockMessage
 	err := ws.dec.Decode(&msg)
 	if err != nil {
 		log.Fatalln(err)
 		return
 	}
-	log.Printf("%T message recieved", msg)
+	log.Printf("##### %T message recieved\n", msg)
 
-	hash := blockchain.Hash("New Genesis")
-	log.Printf("Hash generated: %s", hash)
-	block := blockchain.Block{Hash: hash}
-	err = SendMessage(block, ws)
-	if err != nil {
-		log.Fatalln(err)
+	nextBlock := genesis.Next
+	for nextBlock != nil {
+		log.Printf("##### Sending block %s\n", nextBlock.Hash)
+		err = SendMessage(nextBlock.BlockData, ws)
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		var ackMsg AckMessage
+		err := ws.dec.Decode(&ackMsg)
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+
+		nextBlock = nextBlock.Next
 	}
+
 }
 
 func (h *MyHost) GetBlock(peerID peer.ID) *blockchain.Block {
@@ -158,21 +173,38 @@ func (h *MyHost) GetBlock(peerID peer.ID) *blockchain.Block {
 		log.Fatalln(err)
 	}
 	wrappedStream := WrapStream(stream)
-	// This sends the first message
+
 	msg := &GetBlockMessage{}
 	SendMessage(msg, wrappedStream)
-	// We keep the conversation on the created stream so we launch
-	// this to handle any responses
-	var block blockchain.Block
-	err = wrappedStream.dec.Decode(&block)
-	if err != nil {
-		log.Fatalln(err)
-		return nil
+
+	log.Println("##### GetBlockMessage sent")
+
+	block := &blockchain.Block{}
+	firstBlock := block
+	for {
+
+		var blockData blockchain.BlockData
+		err = wrappedStream.dec.Decode(&blockData)
+		if err != nil {
+			log.Printf("##### stream processing ended: %x", err)
+			break
+		}
+		log.Printf("##### BlockData received %s", blockData.Hash)
+		block.BlockData = blockData
+		nextBlock := &blockchain.Block{Parent: block}
+		block.Next = nextBlock
+		block = nextBlock
+
+		ackMsg := &AckMessage{}
+		SendMessage(ackMsg, wrappedStream)
 	}
+
+	block.Parent.Next = nil
+
 	pid := wrappedStream.stream.Conn().LocalPeer()
-	log.Printf("%s says: %t %s\n", pid, msg, block.Hash)
-	// When we are done, close the stream on our side and exit.
+	log.Printf("##### %s says: %t %s\n", pid, *msg, block.Parent.Hash)
+
 	stream.Close()
 
-	return &block
+	return firstBlock
 }
