@@ -166,11 +166,11 @@ func HandleGetBlockStream(ws *WrappedStream, genesis *blockchain.Block) {
 
 }
 
-func (h *MyHost) GetBlock(peerID peer.ID) *blockchain.Block {
+func (h *MyHost) GetBlock(peerID peer.ID) (*blockchain.Block, error) {
 	// Create new stream from h1 to h2 and start the conversation
 	stream, err := h.NewStream(context.Background(), peerID, "/akh/1.0.0")
 	if err != nil {
-		log.Fatalln(err)
+		return nil, err
 	}
 	wrappedStream := WrapStream(stream)
 
@@ -206,5 +206,5 @@ func (h *MyHost) GetBlock(peerID peer.ID) *blockchain.Block {
 
 	stream.Close()
 
-	return firstBlock
+	return firstBlock, nil
 }
