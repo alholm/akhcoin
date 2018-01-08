@@ -18,12 +18,6 @@ type Block struct {
 	Next   *Block
 }
 
-type Transaction struct {
-	Sender    string
-	Recipient string
-	Amount    int64
-}
-
 type TreeNode struct {
 	T           Transaction
 	Left, Right *TreeNode
@@ -53,8 +47,8 @@ func NewBlock(parent *Block) *Block {
 //gathers all published but not confirmed transactions
 func collectTransactions() TreeNode {
 	//TODO temp
-	t := Transaction{"me", "someone", 100}
-	t1 := Transaction{"other one", "me", 200}
+	t := Transaction{Sender:"me", Recipient:"someone", Amount:100}
+	t1 := Transaction{Sender:"other one", Recipient:"me", Amount:200}
 	return TreeNode{T: t, Right: &TreeNode{T: t1}}
 
 }

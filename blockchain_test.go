@@ -1,15 +1,13 @@
 package main
 
 import (
-	"fmt"
+	"akhcoin/blockchain"
 )
 
 func ExampleAkhNode() {
 	node := NewAkhNode()
-	block := node.Produce()
+	block := node.Produce(blockchain.CreateGenesis())
 	node.Receive(block)
-	fmt.Printf("Chain len = %x\n", len(node.blockchain))
 	// Output:
 	// Block verified!
-	// Chain len = 2
 }
