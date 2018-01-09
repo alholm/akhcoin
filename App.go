@@ -6,17 +6,11 @@ import (
 	"akhcoin/p2p"
 	"flag"
 	"log"
-	"github.com/libp2p/go-libp2p-peerstore"
-	ma "github.com/multiformats/go-multiaddr"
-	"github.com/libp2p/go-libp2p-peer"
 	"bufio"
 	"os"
-	"strings"
 	"math/rand"
 	"time"
 )
-
-const hostsInfoPath = "/tmp/akhhosts.info"
 
 type Node interface {
 	Vote(sign string, addr string)
@@ -42,7 +36,7 @@ func (*AkhNode) Produce(parent *Block) *Block {
 	return NewBlock(parent)
 }
 
-func (n *AkhNode) Receive(b *Block) {
+func (node *AkhNode) Receive(b *Block) {
 	Verify(b)
 	//n.blockchain = append(n.blockchain, b)
 }
@@ -52,8 +46,8 @@ func Verify(block *Block) error {
 	return nil
 }
 
-func (n *AkhNode) ReceiveTransaction(t *Transaction) {
-	n.transactionsPool[t] = true
+func (node *AkhNode) ReceiveTransaction(t *Transaction) {
+	node.transactionsPool[t] = true
 }
 
 func NewAkhNode() *AkhNode {
@@ -99,8 +93,6 @@ func main() {
 	remotePeerID := flag.String("id", "", "add peer ID <format>")
 	flag.Parse()
 
-	fmt.Printf("Peer: %s, port: %d, bye!\n", *remotePeerAddr, *port)
-
 	node := NewAkhNode()
 
 	if *port == 0 {
@@ -110,12 +102,13 @@ func main() {
 
 	host := p2p.StartHost(*port)
 	p2p.SetStreamHandler(host, p2p.HandleGetBlockStream, node.Genesis)
-	dumpHostInfo(host)
+	host.DumpHostInfo(host)
 	/////
 
 	//chain = downloadUtil.downloadExisting blocks
 
 	node.Head = node.Genesis
+	host.DiscoverPeers(*remotePeerAddr, *remotePeerID)
 
 	for {
 		reader := bufio.NewReader(os.Stdin)
@@ -123,26 +116,12 @@ func main() {
 		text, _ := reader.ReadString('\n')
 		if text == "exit\n" {
 			break
-		} else if text == "p\n" {
+		} else if text == "g\n" {
 			node.Head = NewBlock(node.Head)
+		} else if text == "p\n" {
+			node.testPay(host)
 		} else {
-			peers := discoverPeers(*remotePeerAddr, *remotePeerID)
-			for _, peerInfo := range peers {
-				fmt.Printf("### requesting block from %s\n", peerInfo)
-				host.AddPeer(&peerInfo)
-				block, err := host.GetBlock(peerInfo.ID)
-				if err != nil {
-					log.Println(err)
-					continue
-				}
-				for block != nil {
-					Validate(block, node.Head)
-					fmt.Printf("Recieved block, hash: %s\n", block.Hash)
-					transaction := block.Transactions.Right.T
-					fmt.Printf("%s sent %d to %s\n", transaction.Sender, transaction.Amount, transaction.Recipient)
-					block = block.Next
-				}
-			}
+			node.initialBlockDownload(host)
 		}
 	}
 
@@ -151,62 +130,35 @@ func main() {
 	//<-make(chan struct{}) // hang forever
 
 }
-func dumpHostInfo(host p2p.MyHost) error {
-	info := fmt.Sprintf("%s:%s\n", host.Addrs()[0], host.ID().Pretty())
-	fmt.Print(info)
-	f, err := os.OpenFile(hostsInfoPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatal(err)
-	}
+func (node *AkhNode) testPay(host p2p.AkhHost) {
+	private := host.Peerstore().PrivKey(host.ID())
+	log.Println(private)
 
-	defer f.Close()
+	rand.Seed(time.Now().UnixNano())
+	peerIDs := host.Peerstore().Peers()
+	i := rand.Intn(len(peerIDs) - 1)
+	s := rand.Uint64()
 
-	_, err = f.WriteString(info)
-	return err
-}
-func discoverPeers(remotePeerAddr string, remotePeerID string) []peerstore.PeerInfo {
-	peers := readHostsInfo()
-	log.Printf("### pre-defined peers number = %d", len(peers))
-	if len(remotePeerAddr) > 0 && len(remotePeerID) > 0 {
-		split := strings.Split(remotePeerAddr, ":")
-		addrStr := fmt.Sprintf("/ip4/%s/tcp/%s", split[0], split[1])
-		peerInfo := newPeerInfo(addrStr, remotePeerID)
-		peers = append(peers, peerInfo)
-	}
+	t := Pay(private, peerIDs[i], s)
 
-	return peers
-}
-func newPeerInfo(addrStr string, remotePeerID string) peerstore.PeerInfo {
-	addr, _ := ma.NewMultiaddr(addrStr)
-	decID, err := peer.IDB58Decode(remotePeerID)
-	if err != nil {
-		log.Fatal(err)
-	}
-	peerInfo := peerstore.PeerInfo{ID: decID, Addrs: []ma.Multiaddr{addr}}
-	return peerInfo
+	log.Printf("### Just created txn: %s\n", t)
+	host.PublishTransaction(t)
 }
 
-func readHostsInfo() []peerstore.PeerInfo {
-
-	peers := make([]peerstore.PeerInfo, 0, 10) //magic constant
-
-	file, err := os.Open(hostsInfoPath)
-	if err != nil {
-		log.Print(err)
-		return peers
+func (node *AkhNode) initialBlockDownload(host p2p.AkhHost) {
+	for _, peerID := range host.Peerstore().Peers() {
+		fmt.Printf("### requesting block from %s\n", peerID.Pretty())
+		block, err := host.GetBlock(peerID)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		for block != nil {
+			Validate(block, node.Head)
+			fmt.Printf("Recieved block, hash: %s\n", block.Hash)
+			transaction := block.Transactions.Right.T
+			fmt.Printf("%s sent %d to %s\n", transaction.Sender, transaction.Amount, transaction.Recipient)
+			block = block.Next
+		}
 	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		split := strings.Split(line, ":")
-		peers = append(peers, newPeerInfo(split[0], split[1]))
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-
-	return peers
 }

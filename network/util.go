@@ -5,7 +5,7 @@ import (
 	"akhcoin/p2p"
 )
 
-func DownloadBlocks(host p2p.MyHost) *blockchain.Block {
+func DownloadBlocks(host p2p.AkhHost) *blockchain.Block {
 	//p2p.SendMyMessage()
 
 	return nil

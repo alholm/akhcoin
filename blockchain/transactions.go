@@ -5,6 +5,7 @@ import (
 	"github.com/libp2p/go-libp2p-crypto"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 )
 
 type Transaction struct {
@@ -12,7 +13,11 @@ type Transaction struct {
 	Recipient string
 	Amount    uint64
 	Sign      []byte
-	PublicKey crypto.PubKey
+	PublicKey []byte
+}
+
+func (t *Transaction) String() string {
+	return fmt.Sprintf("%d from %s to %s", t.Amount, t.Sender, t.Recipient)
 }
 
 func (t *Transaction) getCorpus() []byte {
@@ -30,18 +35,22 @@ func (t *Transaction) getCorpus() []byte {
 func (t *Transaction) Verify() bool {
 	id, _ := peer.IDB58Decode(t.Sender)
 
-	if id.MatchesPublicKey(t.PublicKey) {
-		result, _ := t.PublicKey.Verify(t.getCorpus(), t.Sign)
+	public, _ := crypto.UnmarshalPublicKey(t.PublicKey)
+
+	if id.MatchesPublicKey(public) {
+		result, _ := public.Verify(t.getCorpus(), t.Sign)
 		return result
 	}
 	return false
 }
 
-func Pay(privKey crypto.PrivKey, recipient peer.ID, amount uint64) *Transaction {
+func Pay(private crypto.PrivKey, recipient peer.ID, amount uint64) *Transaction {
 
-	sender, _ := peer.IDFromPrivateKey(privKey)
-	t := Transaction{Sender: sender.Pretty(), Recipient: recipient.Pretty(), Amount: amount, PublicKey: privKey.GetPublic()}
-	sign, _ := privKey.Sign(t.getCorpus())
+	sender, _ := peer.IDFromPrivateKey(private)
+	public, _ := private.GetPublic().Bytes()
+
+	t := Transaction{Sender: sender.Pretty(), Recipient: recipient.Pretty(), Amount: amount, PublicKey: public}
+	sign, _ := private.Sign(t.getCorpus())
 	t.Sign = sign
 
 	return &t
