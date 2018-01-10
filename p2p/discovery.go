@@ -12,19 +12,20 @@ import (
 	"os"
 )
 
-const hostsInfoPath = "/tmp/akhhosts.info"
+const HostsInfoPath = "/tmp/akhhosts.info"
 
-func (h *AkhHost) DiscoverPeers(remotePeerAddr string, remotePeerID string) {
+func (h *AkhHost) DiscoverPeers() {
 	peers := readHostsInfo()
 	log.Printf("### pre-defined peers number = %d", len(peers))
-	if len(remotePeerAddr) > 0 && len(remotePeerID) > 0 {
-		split := strings.Split(remotePeerAddr, ":")
-		addrStr := fmt.Sprintf("/ip4/%s/tcp/%s", split[0], split[1])
-		peerInfo := newPeerInfo(addrStr, remotePeerID)
-		peers = append(peers, peerInfo)
-	}
-
 	h.populatePeerStore(peers)
+}
+
+//TODO validation and error handling
+func (h *AkhHost) AddPeerManually(remotePeerAddr string, remotePeerID string) {
+	split := strings.Split(remotePeerAddr, ":")
+	addrStr := fmt.Sprintf("/ip4/%s/tcp/%s", split[0], split[1])
+	peerInfo := newPeerInfo(addrStr, remotePeerID)
+	h.populatePeerStore([]ps.PeerInfo{peerInfo})
 }
 
 func newPeerInfo(addrStr string, remotePeerID string) ps.PeerInfo {
@@ -41,7 +42,7 @@ func readHostsInfo() []ps.PeerInfo {
 
 	peers := make([]ps.PeerInfo, 0, 10) //magic constant
 
-	file, err := os.Open(hostsInfoPath)
+	file, err := os.Open(HostsInfoPath)
 	if err != nil {
 		log.Print(err)
 		return peers
@@ -62,18 +63,18 @@ func readHostsInfo() []ps.PeerInfo {
 	return peers
 }
 
-func (h *AkhHost) DumpHostInfo(host AkhHost) error {
-	info := fmt.Sprintf("%s:%s\n", host.Addrs()[0], host.ID().Pretty())
-	fmt.Print(info)
-	f, err := os.OpenFile(hostsInfoPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func (h *AkhHost) DumpHostInfo() (err error) {
+	info := fmt.Sprintf("%s:%s\n", h.Addrs()[0], h.ID().Pretty())
+	f, err := os.OpenFile(HostsInfoPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error while dumping host info to local registry: %s\n", err)
+		return
 	}
 
 	defer f.Close()
 
 	_, err = f.WriteString(info)
-	return err
+	return
 }
 
 //TODO 1) check connectivity and delete invalid peers

@@ -32,16 +32,21 @@ func (t *Transaction) getCorpus() []byte {
 
 }
 
-func (t *Transaction) Verify() bool {
-	id, _ := peer.IDB58Decode(t.Sender)
-
-	public, _ := crypto.UnmarshalPublicKey(t.PublicKey)
+func (t *Transaction) Verify() (result bool, err error){
+	result = false
+	id, err := peer.IDB58Decode(t.Sender)
+	if err != nil {
+		return
+	}
+	public, err := crypto.UnmarshalPublicKey(t.PublicKey)
+	if err != nil {
+		return
+	}
 
 	if id.MatchesPublicKey(public) {
-		result, _ := public.Verify(t.getCorpus(), t.Sign)
-		return result
+		result, err = public.Verify(t.getCorpus(), t.Sign)
 	}
-	return false
+	return
 }
 
 func Pay(private crypto.PrivKey, recipient peer.ID, amount uint64) *Transaction {
