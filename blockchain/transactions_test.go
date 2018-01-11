@@ -6,12 +6,14 @@ import (
 	"fmt"
 )
 
-func ExampleTransaction(){
+func ExampleTransaction() {
 	priv, _, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	t := Pay(priv, peer.ID("some"), 42)
-	fmt.Println(t.Verify())
+	verified, _ := t.Verify()
+	fmt.Println(verified)
 	t.Amount++
-	fmt.Println(t.Verify())
+	verified, _ = t.Verify()
+	fmt.Println(verified)
 	// Output:
 	// true
 	// false

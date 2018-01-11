@@ -23,6 +23,7 @@ func TestApp(t *testing.T) {
 	}
 
 	node3.testPay()
+	node2.testPay()
 
 	time.Sleep(500 * time.Millisecond)
 
@@ -31,5 +32,10 @@ func TestApp(t *testing.T) {
 	node1.Host.Close()
 	node2.Host.Close()
 	node3.Host.Close()
+
+	l := len(node1.transactionsPool)
+	if l != 2 {
+		t.Errorf("%d transactions in pull, has to be 2", l)
+	}
 
 }

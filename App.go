@@ -24,7 +24,7 @@ type Node interface {
 
 type AkhNode struct {
 	Host             p2p.AkhHost
-	transactionsPool map[*Transaction]bool
+	transactionsPool []Transaction //TODO avoid duplication (can't just use map of T as T has byte arrays which don't define equity
 	Genesis          *Block
 	Head             *Block
 }
@@ -47,22 +47,33 @@ func Verify(block *Block) error {
 	return nil
 }
 
-func (node *AkhNode) ReceiveTransaction(t *Transaction) {
-	node.transactionsPool[t] = true
+func (node *AkhNode) ReceiveTransaction(t Transaction) {
+	verified, _ := t.Verify()
+	log.Printf("### Txn received: %s, VERIFIED=%t\n", &t, verified)
+	//TODO ATTENTION! RACE CONDITION
+	node.transactionsPool = append(node.transactionsPool, t)
 }
 
 func NewAkhNode(port int) (node *AkhNode) {
 	genesis := CreateGenesis()
+	transactionPool := make([]Transaction, 0, 100) //magic constant
+
 	host := p2p.StartHost(port)
-	p2p.SetStreamHandler(host, p2p.HandleGetBlockStream, genesis)
-	host.DumpHostInfo()
-	host.DiscoverPeers()
+
 	node = &AkhNode{
-		transactionsPool: make(map[*Transaction]bool),
+		transactionsPool: transactionPool,
 		Genesis:          genesis,
 		Head:             genesis,
 		Host:             host,
 	}
+
+	brp := &p2p.BlockStreamHandler{Genesis: genesis}
+	p2p.SetStreamHandler(host, brp)
+
+	trp := &p2p.TransactionStreamHandler{ProcessResult: node.ReceiveTransaction}
+	p2p.SetStreamHandler(host, trp)
+	host.DumpHostInfo()
+	host.DiscoverPeers()
 	return
 }
 
@@ -132,7 +143,7 @@ func (node *AkhNode) testPay() {
 func (node *AkhNode) initialBlockDownload() {
 	for _, peerID := range node.Host.Peerstore().Peers() {
 		log.Printf("%s requesting block from %s\n", node.Host.ID(), peerID)
-		block, err := node.Host.GetBlock(peerID)
+		block, err := node.Host.GetBlock(peerID, FuncName)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -144,4 +155,11 @@ func (node *AkhNode) initialBlockDownload() {
 			block = block.Next
 		}
 	}
+}
+func FuncName(blockData interface{}) {
+	data, err := blockData.(BlockData)
+	log.Printf("##### %T: %v # %v\n", data, data, err)
+	//v := reflect.ValueOf(blockData)
+	//v.Kind()
+	//log.Printf("##### %v # %v\n", v, v.Kind())
 }

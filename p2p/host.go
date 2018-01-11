@@ -15,13 +15,15 @@ import (
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
 	"github.com/multiformats/go-multicodec"
 	json "github.com/multiformats/go-multicodec/json"
-	"akhcoin/blockchain"
-	"sync"
+	"github.com/libp2p/go-libp2p-protocol"
 )
 
 const protocolsPrefix = "ip4/akhcoin.org/tcp/"
-const blockProto = protocolsPrefix + "block/1.0.0"
-const transactionProto = protocolsPrefix + "transaction/1.0.0"
+
+const (
+	BlockProto       protocol.ID = protocolsPrefix + "block/1.0.0"
+	TransactionProto             = protocolsPrefix + "transaction/1.0.0"
+)
 
 type AkhHost struct {
 	bhost.BasicHost
@@ -92,150 +94,40 @@ func (h *AkhHost) Start() {
 	h.BasicHost = *bhost.New(h.network)
 }
 
-func SetStreamHandler(h2 AkhHost, handler func(ws *WrappedStream, genesis *blockchain.Block), lastBlock *blockchain.Block) {
-	h2.SetStreamHandler(blockProto, func(stream inet.Stream) {
-		log.Printf("%s: Received %s stream from %s", h2.ID(), blockProto, stream.Conn().RemotePeer())
-		ws := WrapStream(stream)
-		defer stream.Close()
-		handler(ws, lastBlock)
-		log.Printf("%s: %s stream from %s processing finished", h2.ID(), blockProto, stream.Conn().RemotePeer())
-	})
+type StreamHandler interface {
+	handle(ws *WrappedStream)
+	protocol() protocol.ID
+}
 
-	h2.SetStreamHandler(transactionProto, func(stream inet.Stream) {
-		log.Printf("%s: Received %s stream from %s", h2.ID(), transactionProto, stream.Conn().RemotePeer())
+func SetStreamHandler(h2 AkhHost, handler StreamHandler) {
+	h2.SetStreamHandler(handler.protocol(), func(stream inet.Stream) {
+		log.Printf("%s: Received %s stream from %s", h2.ID(), handler.protocol(), stream.Conn().RemotePeer())
 		ws := WrapStream(stream)
 		defer stream.Close()
-		HandleTransactionStream(ws)
-		log.Printf("%s: %s stream from %s processing finished", h2.ID(), transactionProto, stream.Conn().RemotePeer())
+		handler.handle(ws)
+		log.Printf("%s: %s stream from %s processing finished", h2.ID(), handler.protocol(), stream.Conn().RemotePeer())
 	})
 }
 
-func SendMessage(msg interface{}, ws *WrappedStream) (err error) {
+
+func sendMessage(msg interface{}, ws *WrappedStream) (err error) {
 	err = ws.enc.Encode(msg)
 	// Because output is buffered with bufio, we need to flush!
 	ws.w.Flush()
 	return
 }
 
-func receiveMessage(ws *WrappedStream) (msg *MyMessage, err error) {
-	err = ws.dec.Decode(msg)
+func (h *AkhHost) SendMessage(msg interface{}, peerID peer.ID, proto protocol.ID) (ws *WrappedStream, err error) {
+	stream, err := h.NewStream(context.Background(), peerID, proto)
+	if err != nil {
+		return
+	}
+	ws = WrapStream(stream)
+	sendMessage(msg, ws)
 	return
 }
 
-type GetBlockMessage struct {
-	Message
-}
-
-type AckMessage struct {
-	Message
-}
-
-func HandleGetBlockStream(ws *WrappedStream, genesis *blockchain.Block) {
-	var msg GetBlockMessage
-	err := ws.dec.Decode(&msg)
-	if err != nil {
-		log.Printf("Failed to decode stream: %s\n", err)
-		return
-	}
-
-	nextBlock := genesis.Next
-	for nextBlock != nil {
-		log.Printf("%s: sending block %s\n", ws.stream.Conn().LocalPeer(), nextBlock.Hash)
-		err = SendMessage(nextBlock.BlockData, ws)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		var ackMsg AckMessage
-		err := ws.dec.Decode(&ackMsg)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		nextBlock = nextBlock.Next
-	}
-}
-
-func (h *AkhHost) GetBlock(peerID peer.ID) (*blockchain.Block, error) {
-	// Create new stream from h1 to h2 and start the conversation
-	stream, err := h.NewStream(context.Background(), peerID, blockProto)
-	//defer stream.Close()
-	if err != nil {
-		return nil, err
-	}
-	ws := WrapStream(stream)
-
-	msg := &GetBlockMessage{}
-	SendMessage(msg, ws)
-
-	block := &blockchain.Block{}
-	firstBlock := block
-	for {
-
-		var blockData blockchain.BlockData
-		err = ws.dec.Decode(&blockData)
-		if err != nil {
-			log.Printf("%s: %s stream to %s processing ended: %s", h.ID(), blockProto, stream.Conn().RemotePeer(), err)
-			break
-		}
-		log.Printf("%s: BlockData received from %s: %s", h.ID(), stream.Conn().RemotePeer(), blockData.Hash)
-		block.BlockData = blockData
-		nextBlock := &blockchain.Block{Parent: block}
-		block.Next = nextBlock
-		block = nextBlock
-
-		ackMsg := &AckMessage{}
-		SendMessage(ackMsg, ws)
-	}
-
-	//TODO may be nil
-	block.Parent.Next = nil
-
-	//pid := ws.stream.Conn().LocalPeer()
-
-	return firstBlock, nil
-}
-
-//TODO error handling
-func (h *AkhHost) PublishTransaction(t *blockchain.Transaction) {
-	var wg sync.WaitGroup
-	for _, peerID := range h.Peerstore().Peers() {
-		wg.Add(1)
-		go func(peerID peer.ID) {
-			defer wg.Done()
-			log.Printf("### Txn published to %s - %s \n", peerID.Pretty(), h.Peerstore().Addrs(peerID))
-			stream, err := h.NewStream(context.Background(), peerID, transactionProto)
-			//defer stream.Close()
-			if err != nil {
-				log.Printf("Error publishing transaction to %s: %s\n", peerID, err)
-				return
-			}
-			ws := WrapStream(stream)
-
-			SendMessage(*t, ws)
-			//var ackMsg AckMessage
-			//err := ws.dec.Decode(&ackMsg)
-			//if err != nil {
-			//	log.Println(err)
-			//	return
-			//}
-		}(peerID)
-	}
-	wg.Wait()
-	log.Printf("### Transaction %s sent\n", t)
-}
-
-func HandleTransactionStream(ws *WrappedStream) {
-
-	var t blockchain.Transaction
-	err := ws.dec.Decode(&t)
-	if err != nil {
-		log.Printf("Failed to process transaction msg: %s\n", err)
-	}
-
-	verified, _ := t.Verify()
-	log.Printf("### Txn received: %s, VERIFIED=%t\n", &t, verified)
-	//ackMsg := &AckMessage{}
-	//SendMessage(ackMsg, ws)
+func receiveMessage(msg interface{}, ws *WrappedStream) (err error) {
+	err = ws.dec.Decode(msg)
+	return
 }
