@@ -33,8 +33,19 @@ func (*AkhNode) Vote(sign string, addr string) {
 	panic("implement me")
 }
 
-func (*AkhNode) Produce(parent *Block) *Block {
-	return NewBlock(parent)
+func (node *AkhNode) Produce() (block *Block, err error) {
+	pool := node.transactionsPool
+	if len(pool) == 0 {
+		err = fmt.Errorf("no transactions in pool, no block needed")
+	}
+	privateKey := node.Host.Peerstore().PrivKey(node.Host.ID())
+	block = NewBlock(privateKey, node.Head, pool)
+	node.Head = block
+
+	//TODO ATTENTION! RACE CONDITION, has to be guarded
+	node.transactionsPool = pool[:0]
+
+	return
 }
 
 func (node *AkhNode) Receive(b *Block) {
@@ -42,13 +53,8 @@ func (node *AkhNode) Receive(b *Block) {
 	//n.blockchain = append(n.blockchain, b)
 }
 
-func Verify(block *Block) error {
-	log.Println("Block verified!")
-	return nil
-}
-
 func (node *AkhNode) ReceiveTransaction(t Transaction) {
-	verified, _ := t.Verify()
+	verified, _ := Verify(&t)
 	log.Printf("### Txn received: %s, VERIFIED=%t\n", &t, verified)
 	//TODO ATTENTION! RACE CONDITION
 	node.transactionsPool = append(node.transactionsPool, t)
@@ -109,7 +115,8 @@ func main() {
 		if text == "exit\n" {
 			break
 		} else if text == "g\n" {
-			node.Head = NewBlock(node.Head)
+			block, err := node.Produce()
+			log.Printf("%s: New Block hash = %s, error: %s\n", node.Host.ID(), block.Hash, err)
 		} else if text == "p\n" {
 			node.testPay()
 		} else {
@@ -149,9 +156,10 @@ func (node *AkhNode) initialBlockDownload() {
 			continue
 		}
 		for block != nil {
-			Validate(block, node.Head)
-			transaction := block.Transactions.Right.T
-			log.Printf("%s sent %d to %s\n", transaction.Sender, transaction.Amount, transaction.Recipient)
+			valid := Validate(block, node.Head)
+			if !valid {
+				//TODO
+			}
 			block = block.Next
 		}
 	}

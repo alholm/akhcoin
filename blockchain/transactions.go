@@ -8,6 +8,13 @@ import (
 	"fmt"
 )
 
+type Signable interface {
+	GetSigner() string
+	GetPublicKey() []byte
+	GetCorpus() []byte
+	GetSign() []byte
+}
+
 type Transaction struct {
 	Sender    string
 	Recipient string
@@ -16,12 +23,16 @@ type Transaction struct {
 	PublicKey []byte
 }
 
-func (t *Transaction) String() string {
-	return fmt.Sprintf("%d from %s to %s", t.Amount, t.Sender, t.Recipient)
+func (t *Transaction) GetSigner() string {
+	return t.Sender
 }
 
-func (t *Transaction) getCorpus() []byte {
-	// Gather corpus to sign.
+func (t *Transaction) GetPublicKey() []byte {
+	return t.PublicKey
+}
+
+func (t *Transaction) GetCorpus() []byte {
+	// Gather corpus to Sign.
 	corpus := new(bytes.Buffer)
 	corpus.Write([]byte(t.Sender))
 	corpus.Write([]byte(t.Recipient))
@@ -32,19 +43,28 @@ func (t *Transaction) getCorpus() []byte {
 
 }
 
-func (t *Transaction) Verify() (result bool, err error){
+func (t *Transaction) GetSign() []byte {
+	return t.Sign
+}
+
+func (t *Transaction) String() string {
+	return fmt.Sprintf("%d from %s to %s", t.Amount, t.Sender, t.Recipient)
+}
+
+func Verify(s Signable) (result bool, err error) {
+
 	result = false
-	id, err := peer.IDB58Decode(t.Sender)
+	id, err := peer.IDB58Decode(s.GetSigner())
 	if err != nil {
 		return
 	}
-	public, err := crypto.UnmarshalPublicKey(t.PublicKey)
+	public, err := crypto.UnmarshalPublicKey(s.GetPublicKey())
 	if err != nil {
 		return
 	}
 
 	if id.MatchesPublicKey(public) {
-		result, err = public.Verify(t.getCorpus(), t.Sign)
+		result, err = public.Verify(s.GetCorpus(), s.GetSign())
 	}
 	return
 }
@@ -55,7 +75,7 @@ func Pay(private crypto.PrivKey, recipient peer.ID, amount uint64) *Transaction 
 	public, _ := private.GetPublic().Bytes()
 
 	t := Transaction{Sender: sender.Pretty(), Recipient: recipient.Pretty(), Amount: amount, PublicKey: public}
-	sign, _ := private.Sign(t.getCorpus())
+	sign, _ := private.Sign(t.GetCorpus())
 	t.Sign = sign
 
 	return &t
