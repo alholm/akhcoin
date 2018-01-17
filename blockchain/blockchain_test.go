@@ -13,10 +13,10 @@ func ExampleNewBlock() {
 
 	parent := CreateGenesis()
 	block := NewBlock(priv, parent, []Transaction{*t})
-	verified, _ := Verify(block)
+	verified, _ := verify(block)
 	fmt.Println(verified)
 	block.Nonce = uuid.NewV1()
-	verified, _ = Verify(block)
+	verified, _ = verify(block)
 	fmt.Println(verified)
 	// Output:
 	// true

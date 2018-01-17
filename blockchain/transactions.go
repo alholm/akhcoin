@@ -51,7 +51,11 @@ func (t *Transaction) String() string {
 	return fmt.Sprintf("%d from %s to %s", t.Amount, t.Sender, t.Recipient)
 }
 
-func Verify(s Signable) (result bool, err error) {
+func (t *Transaction) Verify() (result bool, err error) {
+	return verify(t)
+}
+
+func verify(s Signable) (result bool, err error) {
 
 	result = false
 	id, err := peer.IDB58Decode(s.GetSigner())

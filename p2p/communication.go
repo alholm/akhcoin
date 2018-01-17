@@ -9,6 +9,14 @@ import (
 	"github.com/libp2p/go-libp2p-protocol"
 )
 
+const protocolsPrefix = "ip4/akhcoin.org/tcp/"
+
+const (
+	BlockProto         protocol.ID = protocolsPrefix + "block/1.0.0"
+	TransactionProto               = protocolsPrefix + "transaction/1.0.0"
+	BlockAnnounceProto             = protocolsPrefix + "blockAnnounce/1.0.0"
+)
+
 type GetBlockMessage struct {
 	Message
 }
@@ -54,7 +62,7 @@ func (brp *BlockStreamHandler) handle(ws *WrappedStream) {
 }
 
 type TransactionStreamHandler struct {
-	ProcessResult func (t blockchain.Transaction)
+	ProcessResult func(t blockchain.Transaction)
 }
 
 func (trp *TransactionStreamHandler) protocol() protocol.ID {
@@ -70,6 +78,25 @@ func (trp *TransactionStreamHandler) handle(ws *WrappedStream) {
 	}
 
 	trp.ProcessResult(t)
+}
+
+type AnnouncedBlockStreamHandler struct {
+	ProcessResult func(bd blockchain.BlockData)
+}
+
+func (abrp *AnnouncedBlockStreamHandler) handle(ws *WrappedStream) {
+	var bd blockchain.BlockData
+	err := receiveMessage(&bd, ws)
+	if err != nil {
+		log.Printf("Failed to process block msg: %s\n", err)
+		return
+	}
+
+	abrp.ProcessResult(bd)
+}
+
+func (*AnnouncedBlockStreamHandler) protocol() protocol.ID {
+	return BlockAnnounceProto
 }
 
 func (h *AkhHost) GetBlock(peerID peer.ID, someFunc func(o interface{})) (*blockchain.Block, error) {
@@ -106,15 +133,22 @@ func (h *AkhHost) GetBlock(peerID peer.ID, someFunc func(o interface{})) (*block
 	return firstBlock, nil
 }
 
-//TODO error handling
 func (h *AkhHost) PublishTransaction(t *blockchain.Transaction) {
+	h.publish(t, TransactionProto)
+}
+func (h *AkhHost) PublishBlock(b *blockchain.Block) {
+	h.publish(&b.BlockData, BlockAnnounceProto)
+}
+
+//TODO error handling, conditional peers selection
+func (h *AkhHost) publish(t interface{}, proto protocol.ID) {
 	var wg sync.WaitGroup
 	for _, peerID := range h.Peerstore().Peers() {
 		wg.Add(1)
 		go func(peerID peer.ID) {
 			defer wg.Done()
-			log.Printf("### Txn published to %s - %s \n", peerID.Pretty(), h.Peerstore().Addrs(peerID))
-			stream, err := h.NewStream(context.Background(), peerID, TransactionProto)
+			log.Printf("DEBUG: Txn published to %s - %s \n", peerID.Pretty(), h.Peerstore().Addrs(peerID))
+			stream, err := h.NewStream(context.Background(), peerID, proto)
 			//defer stream.Close()
 			if err != nil {
 				log.Printf("Error publishing transaction to %s: %s\n", peerID, err)
@@ -122,7 +156,7 @@ func (h *AkhHost) PublishTransaction(t *blockchain.Transaction) {
 			}
 			ws := WrapStream(stream)
 
-			sendMessage(*t, ws)
+			sendMessage(t, ws)
 			//var ackMsg AckMessage
 			//err := ws.dec.Decode(&ackMsg)
 			//if err != nil {
@@ -132,5 +166,5 @@ func (h *AkhHost) PublishTransaction(t *blockchain.Transaction) {
 		}(peerID)
 	}
 	wg.Wait()
-	log.Printf("### Transaction %s sent\n", t)
+	log.Printf("DEBUG: %T %s sent\n", t, t)
 }

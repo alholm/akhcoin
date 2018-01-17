@@ -10,16 +10,17 @@ import (
 	"os"
 	"math/rand"
 	"time"
+	"bytes"
 )
 
 type Node interface {
 	Vote(sign string, addr string)
 
-	Produce(*Block) *Block
+	Produce() (*Block, error)
 
 	Receive(*Block)
 
-	ReceiveTransaction(*Transaction)
+	ReceiveTransaction(t Transaction)
 }
 
 type AkhNode struct {
@@ -48,16 +49,43 @@ func (node *AkhNode) Produce() (block *Block, err error) {
 	return
 }
 
-func (node *AkhNode) Receive(b *Block) {
-	Verify(b)
-	//n.blockchain = append(n.blockchain, b)
+func (node *AkhNode) Announce(block *Block) (err error) {
+	node.Host.PublishBlock(block)
+	return nil
 }
 
 func (node *AkhNode) ReceiveTransaction(t Transaction) {
-	verified, _ := Verify(&t)
-	log.Printf("### Txn received: %s, VERIFIED=%t\n", &t, verified)
+	verified, _ := t.Verify()
+	log.Printf("DEBUG: Txn received: %s, VERIFIED=%t\n", &t, verified)
 	//TODO ATTENTION! RACE CONDITION
 	node.transactionsPool = append(node.transactionsPool, t)
+}
+
+//TODO think of reaction to invalid block
+func (node *AkhNode) Receive(bd BlockData) {
+	block := &Block{BlockData: bd, Parent: node.Head}
+	verified, err := Validate(block, node.Head)
+	log.Printf("DEBUG: Block received: %s, VERIFIED=%t\n", bd.Hash, verified)
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	node.Attach(block)
+
+	for _, t := range bd.Transactions {
+		for j, y := range node.transactionsPool {
+			if bytes.Equal(y.Sign, t.T.Sign) {
+				//delete
+				node.transactionsPool = append(node.transactionsPool[:j], node.transactionsPool[j+1:]...)
+			}
+		}
+	}
+}
+func (node *AkhNode) Attach(b *Block) {
+	node.Head.Next = b
+	node.Head = b
 }
 
 func NewAkhNode(port int) (node *AkhNode) {
@@ -74,10 +102,14 @@ func NewAkhNode(port int) (node *AkhNode) {
 	}
 
 	brp := &p2p.BlockStreamHandler{Genesis: genesis}
-	p2p.SetStreamHandler(host, brp)
+	p2p.AddStreamHandler(host, brp)
 
 	trp := &p2p.TransactionStreamHandler{ProcessResult: node.ReceiveTransaction}
-	p2p.SetStreamHandler(host, trp)
+	p2p.AddStreamHandler(host, trp)
+
+	abrp := &p2p.AnnouncedBlockStreamHandler{ProcessResult: node.Receive}
+	p2p.AddStreamHandler(host, abrp)
+
 	host.DumpHostInfo()
 	host.DiscoverPeers()
 	return
@@ -156,10 +188,12 @@ func (node *AkhNode) initialBlockDownload() {
 			continue
 		}
 		for block != nil {
-			valid := Validate(block, node.Head)
+			valid, err := Validate(block, node.Head)
 			if !valid {
+				log.Println(err)
 				//TODO
 			}
+			node.Attach(block)
 			block = block.Next
 		}
 	}
