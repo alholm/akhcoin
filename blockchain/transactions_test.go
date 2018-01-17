@@ -9,10 +9,10 @@ import (
 func ExampleTransaction() {
 	priv, _, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	t := Pay(priv, peer.ID("some"), 42)
-	verified, _ := Verify(t)
+	verified, _ := verify(t)
 	fmt.Println(verified)
 	t.Amount++
-	verified, _ = Verify(t)
+	verified, _ = verify(t)
 	fmt.Println(verified)
 	// Output:
 	// true

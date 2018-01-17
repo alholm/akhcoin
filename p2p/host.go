@@ -18,13 +18,6 @@ import (
 	"github.com/libp2p/go-libp2p-protocol"
 )
 
-const protocolsPrefix = "ip4/akhcoin.org/tcp/"
-
-const (
-	BlockProto       protocol.ID = protocolsPrefix + "block/1.0.0"
-	TransactionProto             = protocolsPrefix + "transaction/1.0.0"
-)
-
 type AkhHost struct {
 	bhost.BasicHost
 	network *swarm.Network
@@ -99,7 +92,7 @@ type StreamHandler interface {
 	protocol() protocol.ID
 }
 
-func SetStreamHandler(h2 AkhHost, handler StreamHandler) {
+func AddStreamHandler(h2 AkhHost, handler StreamHandler) {
 	h2.SetStreamHandler(handler.protocol(), func(stream inet.Stream) {
 		log.Printf("%s: Received %s stream from %s", h2.ID(), handler.protocol(), stream.Conn().RemotePeer())
 		ws := WrapStream(stream)

@@ -43,6 +43,10 @@ func (b *BlockData) GetSign() []byte {
 	return b.Sign
 }
 
+func (b *BlockData) String() string {
+	return fmt.Sprintf("%s, %s", b.Hash, b.Nonce.String())
+}
+
 type Block struct {
 	BlockData
 	Parent *Block
@@ -116,23 +120,29 @@ func Hash(bytes []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(bytes))
 }
 
-//TODO think of reaction to invalid block
-func Validate(block *Block, chainHead *Block) (valid bool) {
-	valid, err := Verify(block)
+func Validate(block *Block, chainHead *Block) (valid bool, err error) {
+	valid, err = verify(block)
 	if !valid {
-		log.Printf("INVALID BLOCK: %s: %s\n", block.Hash, err)
+		err = fmt.Errorf("Invalid block: %s: %s\n", block.Hash, err)
+		return
+	}
+
+	if block.ParentHash != chainHead.Hash {
+		err = fmt.Errorf("Wrong block sequance: block: %s parent hash = %s, chain head hash = %s\n",
+			block.Hash, block.ParentHash, chainHead.Hash)
 		return
 	}
 
 	for _, t := range block.Transactions {
 		transaction := t.T
-		valid, err := Verify(transaction)
+		valid, err := verify(transaction)
 		if !valid {
-			log.Printf("INVALID BLOCK TRANSACTION: %s sent %d to %s: %s\n", transaction.GetSigner(), transaction.Amount, transaction.Recipient, err)
+			err = fmt.Errorf("Invalid transaction in block: %s sent %d to %s: %s\n", transaction.GetSigner(),
+				transaction.Amount, transaction.Recipient, err)
 			break
 		}
 
-		log.Printf("%s sent %d to %s\n", transaction.GetSigner(), transaction.Amount, transaction.Recipient)
+		log.Printf("DEBUG: block txn: %s sent %d to %s\n", transaction.GetSigner(), transaction.Amount, transaction.Recipient)
 	}
 	return
 }
