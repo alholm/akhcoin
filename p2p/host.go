@@ -20,7 +20,6 @@ import (
 
 type AkhHost struct {
 	bhost.BasicHost
-	network *swarm.Network
 }
 
 type Message interface {
@@ -28,8 +27,6 @@ type Message interface {
 	MsgText() string
 }
 
-// MyMessage is a serializable/encodable object that we will send
-// on a Stream.
 type MyMessage struct {
 	Msg    string
 	Index  int
@@ -69,8 +66,6 @@ func WrapStream(s inet.Stream) *WrappedStream {
 }
 
 func StartHost(port int) AkhHost {
-	// Ignoring most errors for brevity
-	// See echo example for more details and better implementation
 	private, public, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	pid, _ := peer.IDFromPublicKey(public)
 	listen, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port))
@@ -79,12 +74,14 @@ func StartHost(port int) AkhHost {
 	ps.AddPubKey(pid, public)
 	n, _ := swarm.NewNetwork(context.Background(),
 		[]ma.Multiaddr{listen}, pid, ps, nil)
-	myHost := AkhHost{*bhost.New(n), n}
-	return myHost
-}
+	h := AkhHost{*bhost.New(n)}
 
-func (h *AkhHost) Start() {
-	h.BasicHost = *bhost.New(h.network)
+	//TODO temp, think where it belongs
+	drp := &DiscoverStreamHandler{&ps}
+	h.AddStreamHandler(drp)
+	log.Printf("DEBUG: host %s %s on %s started\n", h.ID().Pretty(), h.ID(), listen)
+
+	return h
 }
 
 type StreamHandler interface {
@@ -92,21 +89,40 @@ type StreamHandler interface {
 	protocol() protocol.ID
 }
 
-func AddStreamHandler(h2 AkhHost, handler StreamHandler) {
-	h2.SetStreamHandler(handler.protocol(), func(stream inet.Stream) {
-		log.Printf("%s: Received %s stream from %s", h2.ID(), handler.protocol(), stream.Conn().RemotePeer())
+func (h *AkhHost) AddStreamHandler(handler StreamHandler) {
+	h.SetStreamHandler(handler.protocol(), func(stream inet.Stream) {
+		log.Printf("%s: Received %s stream from %s", h.ID(), handler.protocol(), stream.Conn().RemotePeer())
 		ws := WrapStream(stream)
 		defer stream.Close()
 		handler.handle(ws)
-		log.Printf("%s: %s stream from %s processing finished", h2.ID(), handler.protocol(), stream.Conn().RemotePeer())
+		log.Printf("%s: %s stream from %s processing finished", h.ID(), handler.protocol(), stream.Conn().RemotePeer())
 	})
 }
 
+func (h *AkhHost) ask(peerID peer.ID, question Message, proto protocol.ID, answer interface{}) (err error) {
+	ws, err := h.SendMessage(&question, peerID, proto)
+	if err != nil {
+		return
+	}
+	err = receiveMessage(&answer, ws)
+	if err != nil {
+		err = fmt.Errorf("%s: %s stream to %s processing ended: %s", h.ID(), proto, peerID, err)
 
-func sendMessage(msg interface{}, ws *WrappedStream) (err error) {
-	err = ws.enc.Encode(msg)
-	// Because output is buffered with bufio, we need to flush!
-	ws.w.Flush()
+	}
+	return
+}
+
+func answer(ws *WrappedStream, question Message, getAnswer func() interface{}) (err error) {
+	err = receiveMessage(&question, ws)
+	if err != nil {
+		err = fmt.Errorf("Failed to decode stream: %s\n", err)
+		return
+	}
+
+	err = sendMessage(getAnswer(), ws)
+	if err != nil {
+		err = fmt.Errorf("%s: Failed to transmit peer info: %s\n", ws.stream.Conn().RemotePeer(), err)
+	}
 	return
 }
 
@@ -117,6 +133,13 @@ func (h *AkhHost) SendMessage(msg interface{}, peerID peer.ID, proto protocol.ID
 	}
 	ws = WrapStream(stream)
 	sendMessage(msg, ws)
+	return
+}
+
+func sendMessage(msg interface{}, ws *WrappedStream) (err error) {
+	err = ws.enc.Encode(msg)
+	// Because output is buffered with bufio, we need to flush!
+	ws.w.Flush()
 	return
 }
 

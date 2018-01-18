@@ -102,13 +102,13 @@ func NewAkhNode(port int) (node *AkhNode) {
 	}
 
 	brp := &p2p.BlockStreamHandler{Genesis: genesis}
-	p2p.AddStreamHandler(host, brp)
+	host.AddStreamHandler(brp)
 
 	trp := &p2p.TransactionStreamHandler{ProcessResult: node.ReceiveTransaction}
-	p2p.AddStreamHandler(host, trp)
+	host.AddStreamHandler(trp)
 
 	abrp := &p2p.AnnouncedBlockStreamHandler{ProcessResult: node.Receive}
-	p2p.AddStreamHandler(host, abrp)
+	host.AddStreamHandler(abrp)
 
 	host.DumpHostInfo()
 	host.DiscoverPeers()

@@ -15,6 +15,7 @@ const (
 	BlockProto         protocol.ID = protocolsPrefix + "block/1.0.0"
 	TransactionProto               = protocolsPrefix + "transaction/1.0.0"
 	BlockAnnounceProto             = protocolsPrefix + "blockAnnounce/1.0.0"
+	DiscoverProto                  = protocolsPrefix + "discover/1.0.0"
 )
 
 type GetBlockMessage struct {
