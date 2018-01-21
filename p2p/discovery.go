@@ -12,6 +12,7 @@ import (
 	"os"
 	"github.com/libp2p/go-libp2p-protocol"
 	"context"
+	"time"
 )
 
 const HostsInfoPath = "/tmp/akhhosts.info"
@@ -49,35 +50,83 @@ func readHostsInfo() []ps.PeerInfo {
 	return peers
 }
 
-//TODO 1) check connectivity and delete invalid peers
-//	   2) parallelize
+type TestedPeer struct {
+	ps.PeerInfo
+	err error
+}
+
+//TODO 1) delete invalid peers
 func (h *AkhHost) populatePeerStore(peerInfos []ps.PeerInfo) {
 	log.Println("DEBUG: populating peerstore...")
 
-	for _, peerInfo := range peerInfos {
-		err := h.addPeer(peerInfo)
-		if err != nil {
-			log.Println(fmt.Errorf("Error while populating %s peerstore: %s\n", h.ID(), err))
-			continue
-		}
+	peerCh := make(chan TestedPeer)
+	countCh := make(chan int)
 
-		peerPeers, _ := h.askForPeers(peerInfo.ID)
-		for _, peerPeerInfo := range peerPeers {
-			log.Printf("DEBUG: Received peer: %s\n", peerPeerInfo.ID.Pretty())
-			err = h.addPeer(peerPeerInfo)
-			if err != nil {
-				log.Println(err)
+	go getPeers(h, peerInfos, 1, peerCh, countCh)
+
+	counter, expected, processed := 0, 0, 0
+	done := make(chan bool)
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case delta := <-countCh:
+			if delta > 0 {
+				expected += delta
 			}
+			if counter += delta; counter == 0 {
+				go func() { done <- true }()
+			}
+		case testedPeer := <-peerCh:
+			processed++
+			if testedPeer.err == nil {
+				log.Printf("DEBUG populatePeerStore: Received peer: %s\n", testedPeer.ID.Pretty())
+				h.addPeer(testedPeer.PeerInfo)
+			} else {
+				log.Println(fmt.Errorf("Error while adding peer %s to peerstore: %s\n", h.ID(), testedPeer.err))
+			}
+		case <-done:
+			if expected == processed {
+				return
+			}
+			//let peers that are late to be processed
+			go func() { time.Sleep(10 * time.Millisecond); done <- true }()
+
+		case <-timeout:
+			log.Printf("DEBUG populatePeerStore: %d of expected %d peers collected, exited by timeout\n", processed, expected)
+			return
 		}
 	}
+
+}
+func getPeers(h *AkhHost, peerInfos []ps.PeerInfo, depth int, ch chan TestedPeer, countCh chan int) {
+	//how many peers we're about to test and store
+	countCh <- len(peerInfos)
+	for _, peerInfo := range peerInfos {
+		go func() {
+			//one peer processed for sure, and in case it has other peers to process, balance (counter) will be > 0,
+			//as this function recursive call already sent len(peerInfos) to counterCh
+			defer func() { countCh <- -1 }()
+
+			testedPeer := TestedPeer{peerInfo, h.testPeer(peerInfo)}
+			ch <- testedPeer
+
+			if depth != 0 {
+				peerPeers, _ := h.askForPeers(peerInfo.ID)
+				getPeers(h, peerPeers, depth-1, ch, countCh)
+			}
+		}()
+
+	}
+
 }
 
-func (h *AkhHost) addPeer(peerInfo ps.PeerInfo) (err error) {
-	err = h.Connect(context.Background(), peerInfo)
-	if err == nil {
-		h.Peerstore().SetAddrs(peerInfo.ID, peerInfo.Addrs, ps.PermanentAddrTTL)
-	}
-	return
+func (h *AkhHost) addPeer(peerInfo ps.PeerInfo) {
+	//h.testPeer(peerInfo)
+	h.Peerstore().SetAddrs(peerInfo.ID, peerInfo.Addrs, ps.PermanentAddrTTL)
+}
+func (h *AkhHost) testPeer(peerInfo ps.PeerInfo) error {
+	return h.Connect(context.Background(), peerInfo)
 }
 
 func (h *AkhHost) askForPeers(peerID peer.ID) (peerInfos []ps.PeerInfo, err error) {
