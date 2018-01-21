@@ -25,6 +25,7 @@ func TestAkhHost_DiscoverPeers(t *testing.T) {
 	h0Info := h[0].Peerstore().PeerInfo(h[0].ID())
 	h0Info.Addrs = append(h0Info.Addrs, h[0].Addrs()...)
 
+	h[1].testPeer(h0Info)
 	h[1].addPeer(h0Info)
 
 	h1Info := h[1].Peerstore().PeerInfo(h[1].ID())
@@ -35,7 +36,7 @@ func TestAkhHost_DiscoverPeers(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		peersLen := len(h[i].Peerstore().Peers())
 		if peersLen != 3 {
-			t.Errorf("Unexpected N of peers: %d", peersLen)
+			t.Errorf("Peer %d has unexpected N of peers: %d", i, peersLen)
 		}
 		h[i].Close()
 	}
