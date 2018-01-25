@@ -16,10 +16,11 @@ import (
 )
 
 const HostsInfoPath = "/tmp/akhhosts.info"
+const DefaultPort = 9765
 
 func (h *AkhHost) DiscoverPeers() {
 	peers := readHostsInfo()
-	log.Printf("DEBUG: pre-defined peers number = %d", len(peers))
+	log.Printf("DEBUG: pre-defined peers number = %d\n", len(peers))
 	h.populatePeerStore(peers)
 }
 
@@ -55,10 +56,9 @@ type TestedPeer struct {
 	err error
 }
 
-//TODO 1) delete invalid peers
+//TODO 1) delete invalid peers, self
 func (h *AkhHost) populatePeerStore(peerInfos []ps.PeerInfo) {
 	log.Println("DEBUG: populating peerstore...")
-
 	peerCh := make(chan TestedPeer)
 	countCh := make(chan int)
 
@@ -103,7 +103,7 @@ func getPeers(h *AkhHost, peerInfos []ps.PeerInfo, depth int, ch chan TestedPeer
 	//how many peers we're about to test and store
 	countCh <- len(peerInfos)
 	for _, peerInfo := range peerInfos {
-		go func() {
+		go func(peerInfo ps.PeerInfo) {
 			//one peer processed for sure, and in case it has other peers to process, balance (counter) will be > 0,
 			//as this function recursive call already sent len(peerInfos) to counterCh
 			defer func() { countCh <- -1 }()
@@ -115,7 +115,7 @@ func getPeers(h *AkhHost, peerInfos []ps.PeerInfo, depth int, ch chan TestedPeer
 				peerPeers, _ := h.askForPeers(peerInfo.ID)
 				getPeers(h, peerPeers, depth-1, ch, countCh)
 			}
-		}()
+		}(peerInfo)
 
 	}
 
@@ -130,7 +130,7 @@ func (h *AkhHost) testPeer(peerInfo ps.PeerInfo) error {
 }
 
 func (h *AkhHost) askForPeers(peerID peer.ID) (peerInfos []ps.PeerInfo, err error) {
-	log.Printf("DEBUG: %s asking for peers from %s\n", h.ID(), peerID)
+	log.Printf("DEBUG: %s asking for peers from %s\n", h.ID().Pretty(), peerID.Pretty())
 	var idAddrMap map[string]string
 
 	err = h.ask(peerID, GetPeersMessage{}, DiscoverProto, &idAddrMap)
@@ -198,8 +198,14 @@ func (drp *DiscoverStreamHandler) handle(ws *WrappedStream) {
 //remotePeerID  - unprettyfied ID
 //TODO validation and error handling
 func (h *AkhHost) AddPeerManually(remotePeerAddr string, remotePeerID string) (err error) {
-	split := strings.Split(remotePeerAddr, ":")
-	addrStr := fmt.Sprintf("/ip4/%s/tcp/%s", split[0], split[1])
+	ipAddrPort := strings.Split(remotePeerAddr, ":")
+	var port string
+	if len(ipAddrPort) > 1 {
+		port = ipAddrPort[1]
+	} else {
+		port = fmt.Sprintf("%d", DefaultPort)
+	}
+	addrStr := fmt.Sprintf("/ip4/%s/tcp/%s", ipAddrPort[0], port)
 	peerInfo, err := newPeerInfo(addrStr, remotePeerID)
 	if err == nil {
 		h.populatePeerStore([]ps.PeerInfo{peerInfo})

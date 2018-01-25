@@ -65,7 +65,7 @@ func CreateGenesis() *Block {
 func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction) *Block {
 	txnWrappers := collectTransactions(parent.lastTransaction(), txnsPool)
 
-	nonce := uuid.NewV1()
+	nonce, _ := uuid.NewV1()
 
 	block := &Block{
 		BlockData{

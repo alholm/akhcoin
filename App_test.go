@@ -15,6 +15,7 @@ func TestInitialBlockDownload(t *testing.T) {
 	node2 := NewAkhNode(9765)
 	node3 := NewAkhNode(9654)
 
+
 	node2.testPay()
 	node3.testPay()
 

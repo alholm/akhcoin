@@ -8,7 +8,7 @@ import (
 	"github.com/libp2p/go-libp2p-crypto"
 	inet "github.com/libp2p/go-libp2p-net"
 	"github.com/libp2p/go-libp2p-peer"
-	ps "github.com/libp2p/go-libp2p-peerstore"
+	pstore "github.com/libp2p/go-libp2p-peerstore"
 	"github.com/libp2p/go-libp2p-swarm"
 	ma "github.com/multiformats/go-multiaddr"
 
@@ -68,18 +68,28 @@ func WrapStream(s inet.Stream) *WrappedStream {
 func StartHost(port int) AkhHost {
 	private, public, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	pid, _ := peer.IDFromPublicKey(public)
-	listen, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port))
-	ps := ps.NewPeerstore()
+
+	// /ip4/0.0.0.0 - "any interface" address will be expanded to the known local interfaces.
+	listen, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ps := pstore.NewPeerstore()
 	ps.AddPrivKey(pid, private)
 	ps.AddPubKey(pid, public)
-	n, _ := swarm.NewNetwork(context.Background(),
-		[]ma.Multiaddr{listen}, pid, ps, nil)
+
+	n, err := swarm.NewNetwork(context.Background(), []ma.Multiaddr{listen}, pid, ps, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	h := AkhHost{*bhost.New(n)}
 
 	//TODO temp, think where it belongs
 	drp := &DiscoverStreamHandler{&ps}
 	h.AddStreamHandler(drp)
-	log.Printf("DEBUG: host %s %s on %s started\n", h.ID().Pretty(), h.ID(), listen)
+	log.Printf("DEBUG: host %s %s on %v started\n", h.ID().Pretty(), h.ID(), []ma.Multiaddr{listen})
 
 	return h
 }

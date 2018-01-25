@@ -6,11 +6,12 @@ import (
 	"akhcoin/p2p"
 	"flag"
 	"log"
-	"bufio"
-	"os"
 	"math/rand"
 	"time"
 	"bytes"
+	"net/http"
+	logging "github.com/ipfs/go-log"
+	"github.com/abiosoft/ishell"
 )
 
 type Node interface {
@@ -122,47 +123,74 @@ func main() {
 	//2) DNS seeding: on this stage no domains registered, skipping
 	//3) User-specified on the command line
 
-	// Parse some flags
-	port := flag.Int("p", 9765, "port where to start local host")
-	remotePeerAddr := *flag.String("a", "", "add peer address (format: <IP:port>)")
-	remotePeerID := *flag.String("id", "", "add peer ID <format>")
-	flag.Parse()
+	logging.LevelError() //logging.LevelDebug()
 
-	//TODO temp to test several nodes on single machine
-	if *port == 9765 {
-		rand.Seed(time.Now().UnixNano())
-		*port = rand.Intn(1000) + 9000
-	}
+	port := flag.Int("p", p2p.DefaultPort, "port where to start local host")
+	flag.Parse()
 
 	node := NewAkhNode(*port)
 
-	if len(remotePeerAddr) > 0 && len(remotePeerID) > 0 {
-		node.Host.AddPeerManually(remotePeerAddr, remotePeerID)
-	}
+	startHttpServer(node, port)
 
-	for {
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Enter text: ")
-		text, _ := reader.ReadString('\n')
-		if text == "exit\n" {
-			break
-		} else if text == "g\n" {
-			block, err := node.Produce()
-			log.Printf("%s: New Block hash = %s, error: %s\n", node.Host.ID(), block.Hash, err)
-		} else if text == "p\n" {
+	// by default, new shell includes 'exit', 'help' and 'clear' commands.
+	shell := ishell.New()
+
+	shell.Println("Type \"help\" to see available commands:")
+
+	shell.AddCmd(&ishell.Cmd{
+		Name: "p",
+		Help: "pay user",
+		Func: func(c *ishell.Context) {
 			node.testPay()
-		} else {
+		},
+	})
+
+	shell.AddCmd(&ishell.Cmd{
+		Name: "g",
+		Help: "generate block",
+		Func: func(c *ishell.Context) {
+			block, err := node.Produce()
+			c.Printf("%s: New Block hash = %s, error: %s\n", node.Host.ID(), block.Hash, err)
+			node.testPay()
+		},
+	})
+
+	shell.AddCmd(&ishell.Cmd{
+		Name: "d",
+		Help: "initial blocks download",
+		Func: func(c *ishell.Context) {
 			node.initialBlockDownload()
-		}
-	}
+		},
+	})
+
+	shell.AddCmd(&ishell.Cmd{
+		Name: "-ap",
+		Help: "add peer, format: -ap <IP>[:port] <peer ID>",
+		Func: func(c *ishell.Context) {
+			if len(c.Args) < 2 {
+				c.Println("Not enough arguments, see help")
+				return
+			}
+			err := node.Host.AddPeerManually(c.Args[0], c.Args[1])
+			if err != nil {
+				c.Err(err)
+			}
+		},
+	})
+
+	shell.Run()
 
 	node.Host.Close()
-
-	//dpos.startMining
-
-	//<-make(chan struct{}) // hang forever
-
 }
+
+func startHttpServer(node *AkhNode, port *int) {
+	viewHandler := func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "<h1>%s</h1><div>%s</div>", node.Head.Nonce, node.Head.Hash)
+	}
+	http.HandleFunc("/", viewHandler)
+	go http.ListenAndServe(fmt.Sprintf(":%d", *port-1000), nil)
+}
+
 func (node *AkhNode) testPay() {
 	host := node.Host
 	private := node.Host.Peerstore().PrivKey(host.ID())
@@ -170,6 +198,10 @@ func (node *AkhNode) testPay() {
 
 	rand.Seed(time.Now().UnixNano())
 	peerIDs := host.Peerstore().Peers()
+	if len(peerIDs) <= 1 {
+		log.Println("TEMP: no peers")
+		return
+	}
 	i := rand.Intn(len(peerIDs) - 1)
 	s := rand.Uint64()
 
@@ -182,7 +214,7 @@ func (node *AkhNode) testPay() {
 func (node *AkhNode) initialBlockDownload() {
 	for _, peerID := range node.Host.Peerstore().Peers() {
 		log.Printf("%s requesting block from %s\n", node.Host.ID(), peerID)
-		block, err := node.Host.GetBlock(peerID, FuncName)
+		block, err := node.Host.GetBlock(peerID, singleBlockCallback)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -198,10 +230,5 @@ func (node *AkhNode) initialBlockDownload() {
 		}
 	}
 }
-func FuncName(blockData interface{}) {
-	data, err := blockData.(BlockData)
-	log.Printf("##### %T: %v # %v\n", data, data, err)
-	//v := reflect.ValueOf(blockData)
-	//v.Kind()
-	//log.Printf("##### %v # %v\n", v, v.Kind())
+func singleBlockCallback(blockData interface{}) {
 }
