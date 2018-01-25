@@ -12,6 +12,8 @@ import (
 	"net/http"
 	logging "github.com/ipfs/go-log"
 	"github.com/abiosoft/ishell"
+	"github.com/libp2p/go-libp2p-crypto"
+	"io/ioutil"
 )
 
 type Node interface {
@@ -89,11 +91,11 @@ func (node *AkhNode) Attach(b *Block) {
 	node.Head = b
 }
 
-func NewAkhNode(port int) (node *AkhNode) {
+func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 	genesis := CreateGenesis()
 	transactionPool := make([]Transaction, 0, 100) //magic constant
 
-	host := p2p.StartHost(port)
+	host := p2p.StartHost(port, privateKey)
 
 	node = &AkhNode{
 		transactionsPool: transactionPool,
@@ -111,31 +113,90 @@ func NewAkhNode(port int) (node *AkhNode) {
 	abrp := &p2p.AnnouncedBlockStreamHandler{ProcessResult: node.Receive}
 	host.AddStreamHandler(abrp)
 
-	host.DumpHostInfo()
+	//host.DumpHostInfo()
 	host.DiscoverPeers()
 	return
 }
 
-func main() {
+const privateKeyFileName = "id_rsa"
 
+func main() {
 	//1st launch, we didn't discover any nodes yet, so we have 3 options: (for more details see https://en.bitcoin.it/wiki/Bitcoin_Core_0.11_(ch_4):_P2P_Network)
 	//1) hardcoded nodes
 	//2) DNS seeding: on this stage no domains registered, skipping
 	//3) User-specified on the command line
 
-	logging.LevelError() //logging.LevelDebug()
+	logging.LevelError()
+	//logging.LevelDebug()
 
-	port := flag.Int("p", p2p.DefaultPort, "port where to start local host")
+	port := flag.Int("p", p2p.DefaultPort,
+		fmt.Sprintf("port where to start local host, %d will be used by default", p2p.DefaultPort))
+	keyPath := flag.String("k", "",
+		fmt.Sprintf("path to private key file, will be attempted to read from \"%s\" in current directory by default", privateKeyFileName))
+
 	flag.Parse()
 
-	node := NewAkhNode(*port)
+	fmt.Println("AkhCoin 0.1. Welcome!")
+
+	var keyBytes []byte
+	var readKeyErr error
+
+	if len(*keyPath) > 0 {
+		keyBytes, readKeyErr = ioutil.ReadFile(*keyPath)
+		if readKeyErr != nil {
+			log.Println(fmt.Errorf("Failed to read key file: %s\n", readKeyErr))
+		}
+	}
+
+	if len(*keyPath) == 0 || readKeyErr != nil {
+
+		preShell := ishell.New()
+
+		preShell.Println("No keys provided, type \"help\" to see available commands:")
+
+		preShell.AddCmd(&ishell.Cmd{
+			Name: "key",
+			Help: "specify private key file path, eg </home/.ssh/private.key>; <./id_rsa> by default",
+			Func: func(c *ishell.Context) {
+				path := privateKeyFileName
+				if len(c.Args) > 0 {
+					path = c.Args[0]
+				}
+				keyBytes, readKeyErr = ioutil.ReadFile(path)
+				if readKeyErr == nil {
+					c.Println("Private key successfully added")
+					c.Stop()
+				} else {
+					c.Err(fmt.Errorf("Failed to read key file: %s\n", readKeyErr))
+				}
+			},
+		})
+
+		preShell.AddCmd(&ishell.Cmd{
+			Name: "gen",
+			Help: "generate new key pair and dump to <filename> and <filename>.pub ",
+			Func: func(c *ishell.Context) {
+				keyBytes, readKeyErr = generateAndDumpKeys()
+				if readKeyErr == nil {
+					c.Println("Private key successfully added")
+					c.Stop()
+				} else {
+					c.Err(fmt.Errorf("Failed to generate keys: %s\n", readKeyErr))
+				}
+			},
+		})
+
+		preShell.Run()
+	}
+
+	node := NewAkhNode(*port, keyBytes)
 
 	startHttpServer(node, port)
 
 	// by default, new shell includes 'exit', 'help' and 'clear' commands.
 	shell := ishell.New()
 
-	shell.Println("Type \"help\" to see available commands:")
+	//shell.Println("Type \"help\" to see available commands:")
 
 	shell.AddCmd(&ishell.Cmd{
 		Name: "p",
@@ -151,7 +212,7 @@ func main() {
 		Func: func(c *ishell.Context) {
 			block, err := node.Produce()
 			c.Printf("%s: New Block hash = %s, error: %s\n", node.Host.ID(), block.Hash, err)
-			node.testPay()
+			node.Produce()
 		},
 	})
 
@@ -178,9 +239,23 @@ func main() {
 		},
 	})
 
+	shell.Print(shell.HelpText())
+
 	shell.Run()
 
 	node.Host.Close()
+}
+
+func generateAndDumpKeys() (privateBytes []byte, err error) {
+	private, public, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	privateBytes, _ = crypto.MarshalPrivateKey(private)
+	err = ioutil.WriteFile(privateKeyFileName, privateBytes, 0644)
+	if err != nil {
+		return
+	}
+	publicBytes, _ := crypto.MarshalPublicKey(public)
+	err = ioutil.WriteFile(privateKeyFileName+".pub", publicBytes, 0644)
+	return
 }
 
 func startHttpServer(node *AkhNode, port *int) {

@@ -13,9 +13,13 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
+	"github.com/libp2p/go-libp2p-host"
 	"github.com/multiformats/go-multicodec"
 	json "github.com/multiformats/go-multicodec/json"
 	"github.com/libp2p/go-libp2p-protocol"
+	//"github.com/libp2p/go-libp2p/p2p/discovery"
+	//"time"
+	//"os"
 )
 
 type AkhHost struct {
@@ -65,33 +69,52 @@ func WrapStream(s inet.Stream) *WrappedStream {
 	}
 }
 
-func StartHost(port int) AkhHost {
-	private, public, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	pid, _ := peer.IDFromPublicKey(public)
+type DiscoveryNotifee struct {
+	h host.Host
+}
+
+func (n *DiscoveryNotifee) HandlePeerFound(pi pstore.PeerInfo) {
+	n.h.Connect(context.Background(), pi)
+}
+
+func StartHost(port int, privateKey []byte) AkhHost {
+	//private, public, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	private, err := crypto.UnmarshalPrivateKey(privateKey)
+	handleStartingHostErr(err)
+	public := private.GetPublic()
+	pid, err := peer.IDFromPublicKey(public)
+	handleStartingHostErr(err)
 
 	// /ip4/0.0.0.0 - "any interface" address will be expanded to the known local interfaces.
 	listen, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	handleStartingHostErr(err)
 	ps := pstore.NewPeerstore()
 	ps.AddPrivKey(pid, private)
 	ps.AddPubKey(pid, public)
 
 	n, err := swarm.NewNetwork(context.Background(), []ma.Multiaddr{listen}, pid, ps, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	handleStartingHostErr(err)
+	basicHost := bhost.New(n)
 
-	h := AkhHost{*bhost.New(n)}
+	//dnsService, err := discovery.NewMdnsService(context.Background(), basicHost, time.Second, "akhcoin")
+	////libp2p dicovery switches stderr logging off because mdns floods it, so returning it back (temp solution)
+	//log.SetOutput(os.Stderr)
+	//
+	//notifee := &DiscoveryNotifee{basicHost}
+	//dnsService.RegisterNotifee(notifee)
+	akhHost := AkhHost{*basicHost}
 
 	//TODO temp, think where it belongs
 	drp := &DiscoverStreamHandler{&ps}
-	h.AddStreamHandler(drp)
-	log.Printf("DEBUG: host %s %s on %v started\n", h.ID().Pretty(), h.ID(), []ma.Multiaddr{listen})
+	akhHost.AddStreamHandler(drp)
+	log.Printf("DEBUG: host %s %s on %v started\n", akhHost.ID().Pretty(), akhHost.ID(), []ma.Multiaddr{listen})
 
-	return h
+	return akhHost
+}
+func handleStartingHostErr(err error) {
+	if err != nil {
+		log.Fatal(fmt.Errorf("Failed to start host: %v\n", err))
+	}
 }
 
 type StreamHandler interface {
