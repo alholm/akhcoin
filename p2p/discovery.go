@@ -3,11 +3,9 @@ package p2p
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"github.com/libp2p/go-libp2p-peer"
 	ps "github.com/libp2p/go-libp2p-peerstore"
 	ma "github.com/multiformats/go-multiaddr"
-
 	"strings"
 	"os"
 	"github.com/libp2p/go-libp2p-protocol"
@@ -19,18 +17,15 @@ const HostsInfoPath = "/tmp/akhhosts.info"
 const DefaultPort = 9765
 
 func (h *AkhHost) DiscoverPeers() {
-	peers := readHostsInfo()
-	log.Printf("DEBUG: pre-defined peers number = %d\n", len(peers))
+	peers, err := readHostsInfo()
+	log.Debugf("Pre-defined peers number = %d (%v)\n", len(peers), err)
 	h.populatePeerStore(peers)
 }
 
-func readHostsInfo() []ps.PeerInfo {
-	peers := make([]ps.PeerInfo, 0, 10) //magic constant
-
+func readHostsInfo() (peers []ps.PeerInfo, err error) {
 	file, err := os.Open(HostsInfoPath)
 	if err != nil {
-		log.Print(err)
-		return peers
+		return
 	}
 	defer file.Close()
 
@@ -43,12 +38,8 @@ func readHostsInfo() []ps.PeerInfo {
 			peers = append(peers, peerInfo)
 		}
 	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-
-	return peers
+	err = scanner.Err()
+	return
 }
 
 type TestedPeer struct {
@@ -58,7 +49,7 @@ type TestedPeer struct {
 
 //TODO 1) delete invalid peers, self
 func (h *AkhHost) populatePeerStore(peerInfos []ps.PeerInfo) {
-	log.Println("DEBUG: populating peerstore...")
+	log.Debugf("Populating peerstore...")
 	peerCh := make(chan TestedPeer)
 	countCh := make(chan int)
 
@@ -80,10 +71,10 @@ func (h *AkhHost) populatePeerStore(peerInfos []ps.PeerInfo) {
 		case testedPeer := <-peerCh:
 			processed++
 			if testedPeer.err == nil {
-				log.Printf("DEBUG populatePeerStore: Received peer: %s\n", testedPeer.ID.Pretty())
-				h.addPeer(testedPeer.PeerInfo)
+				log.Debugf("populatePeerStore: Received peer: %s\n", testedPeer.ID.Pretty())
+				h.savePeer(testedPeer.PeerInfo)
 			} else {
-				log.Println(fmt.Errorf("Error while adding peer %s to peerstore: %s\n", h.ID(), testedPeer.err))
+				log.Warning(fmt.Errorf("Error while adding peer %s to peerstore: %s\n", h.ID(), testedPeer.err))
 			}
 		case <-done:
 			if expected == processed {
@@ -93,7 +84,7 @@ func (h *AkhHost) populatePeerStore(peerInfos []ps.PeerInfo) {
 			go func() { time.Sleep(10 * time.Millisecond); done <- true }()
 
 		case <-timeout:
-			log.Printf("DEBUG populatePeerStore: %d of expected %d peers collected, exited by timeout\n", processed, expected)
+			log.Debugf("PopulatePeerStore: %d of expected %d peers collected, exited by timeout\n", processed, expected)
 			return
 		}
 	}
@@ -121,8 +112,7 @@ func getPeers(h *AkhHost, peerInfos []ps.PeerInfo, depth int, ch chan TestedPeer
 
 }
 
-func (h *AkhHost) addPeer(peerInfo ps.PeerInfo) {
-	//h.testPeer(peerInfo)
+func (h *AkhHost) savePeer(peerInfo ps.PeerInfo) {
 	h.Peerstore().SetAddrs(peerInfo.ID, peerInfo.Addrs, ps.PermanentAddrTTL)
 }
 func (h *AkhHost) testPeer(peerInfo ps.PeerInfo) error {
@@ -130,7 +120,7 @@ func (h *AkhHost) testPeer(peerInfo ps.PeerInfo) error {
 }
 
 func (h *AkhHost) askForPeers(peerID peer.ID) (peerInfos []ps.PeerInfo, err error) {
-	log.Printf("DEBUG: %s asking for peers from %s\n", h.ID().Pretty(), peerID.Pretty())
+	log.Debugf("%s asking for peers from %s\n", h.ID().Pretty(), peerID.Pretty())
 	var idAddrMap map[string]string
 
 	err = h.ask(peerID, GetPeersMessage{}, DiscoverProto, &idAddrMap)
@@ -138,7 +128,7 @@ func (h *AkhHost) askForPeers(peerID peer.ID) (peerInfos []ps.PeerInfo, err erro
 	for id, addr := range idAddrMap {
 		peerInfo, peerErr := newPeerInfo(addr, id)
 		if peerErr != nil {
-			log.Printf("Error adding peer %s, %s: %s\n", id, addr, peerErr)
+			log.Warningf("Error adding peer %s, %s: %s\n", id, addr, peerErr)
 		}
 		peerInfos = append(peerInfos, peerInfo)
 	}
@@ -190,7 +180,7 @@ func (drp *DiscoverStreamHandler) handle(ws *WrappedStream) {
 
 	err := answer(ws, &GetPeersMessage{}, getAnswer)
 	if err != nil {
-		log.Printf("Error handling discover stream: %s", err)
+		log.Warningf("Error handling discover stream: %s", err)
 	}
 }
 
@@ -217,7 +207,7 @@ func (h *AkhHost) DumpHostInfo() (err error) {
 	info := fmt.Sprintf("%s:%s\n", h.Addrs()[0], h.ID().Pretty())
 	f, err := os.OpenFile(HostsInfoPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Printf("Error while dumping host info to local registry: %s\n", err)
+		log.Errorf("Error while dumping host info to local registry: %s\n", err)
 		return
 	}
 
@@ -225,4 +215,16 @@ func (h *AkhHost) DumpHostInfo() (err error) {
 
 	_, err = f.WriteString(info)
 	return
+}
+
+type DiscoveryNotifee struct {
+	h AkhHost
+}
+
+func (n *DiscoveryNotifee) HandlePeerFound(peerInfo ps.PeerInfo) {
+	//log.Debugf("Peer discovered: %s", peerInfo.ID.Pretty())
+	err := n.h.testPeer(peerInfo)
+	if err != nil {
+		n.h.savePeer(peerInfo)
+	}
 }

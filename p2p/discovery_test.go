@@ -4,16 +4,23 @@ import (
 	"testing"
 	"os"
 	"github.com/libp2p/go-libp2p-peerstore"
+	"github.com/libp2p/go-libp2p-crypto"
+	logging "github.com/ipfs/go-log"
 )
+
+func init() {
+	logging.SetLogLevel("p2p", "DEBUG")
+	logging.SetLogLevel("mdns", "DEBUG")
+}
 
 func TestAkhHost_DiscoverPeers(t *testing.T) {
 
 	os.Remove(HostsInfoPath)
 
-	h := make([]AkhHost, 3, 3)
+	var h [3]AkhHost
 
 	for i := 0; i < 3; i++ {
-		h[i] = StartHost(9842 + i)
+		h[i] = startRandomHost(9765 + i)
 	}
 
 	for i := 0; i < 3; i++ {
@@ -26,7 +33,7 @@ func TestAkhHost_DiscoverPeers(t *testing.T) {
 	h0Info.Addrs = append(h0Info.Addrs, h[0].Addrs()...)
 
 	h[1].testPeer(h0Info)
-	h[1].addPeer(h0Info)
+	h[1].savePeer(h0Info)
 
 	h1Info := h[1].Peerstore().PeerInfo(h[1].ID())
 	h1Info.Addrs = append(h1Info.Addrs, h[1].Addrs()...)
@@ -40,4 +47,9 @@ func TestAkhHost_DiscoverPeers(t *testing.T) {
 		}
 		h[i].Close()
 	}
+}
+func startRandomHost(p int) AkhHost {
+	private, _, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	privateBytes, _ := crypto.MarshalPrivateKey(private)
+	return StartHost(p, privateBytes)
 }

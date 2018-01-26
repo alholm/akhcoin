@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"bytes"
 	"github.com/satori/go.uuid"
-	"log"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
 )
@@ -141,8 +140,6 @@ func Validate(block *Block, chainHead *Block) (valid bool, err error) {
 				transaction.Amount, transaction.Recipient, err)
 			break
 		}
-
-		log.Printf("DEBUG: block txn: %s sent %d to %s\n", transaction.GetSigner(), transaction.Amount, transaction.Recipient)
 	}
 	return
 }

@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"akhcoin/p2p"
 	"flag"
-	"log"
+	console "log"
 	"math/rand"
 	"time"
-	"bytes"
 	"net/http"
 	logging "github.com/ipfs/go-log"
 	"github.com/abiosoft/ishell"
@@ -16,107 +15,7 @@ import (
 	"io/ioutil"
 )
 
-type Node interface {
-	Vote(sign string, addr string)
-
-	Produce() (*Block, error)
-
-	Receive(*Block)
-
-	ReceiveTransaction(t Transaction)
-}
-
-type AkhNode struct {
-	Host             p2p.AkhHost
-	transactionsPool []Transaction //TODO avoid duplication (can't just use map of T as T has byte arrays which don't define equity
-	Genesis          *Block
-	Head             *Block
-}
-
-func (*AkhNode) Vote(sign string, addr string) {
-	panic("implement me")
-}
-
-func (node *AkhNode) Produce() (block *Block, err error) {
-	pool := node.transactionsPool
-	if len(pool) == 0 {
-		err = fmt.Errorf("no transactions in pool, no block needed")
-	}
-	privateKey := node.Host.Peerstore().PrivKey(node.Host.ID())
-	block = NewBlock(privateKey, node.Head, pool)
-	node.Head = block
-
-	//TODO ATTENTION! RACE CONDITION, has to be guarded
-	node.transactionsPool = pool[:0]
-
-	return
-}
-
-func (node *AkhNode) Announce(block *Block) (err error) {
-	node.Host.PublishBlock(block)
-	return nil
-}
-
-func (node *AkhNode) ReceiveTransaction(t Transaction) {
-	verified, _ := t.Verify()
-	log.Printf("DEBUG: Txn received: %s, VERIFIED=%t\n", &t, verified)
-	//TODO ATTENTION! RACE CONDITION
-	node.transactionsPool = append(node.transactionsPool, t)
-}
-
-//TODO think of reaction to invalid block
-func (node *AkhNode) Receive(bd BlockData) {
-	block := &Block{BlockData: bd, Parent: node.Head}
-	verified, err := Validate(block, node.Head)
-	log.Printf("DEBUG: Block received: %s, VERIFIED=%t\n", bd.Hash, verified)
-
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	node.Attach(block)
-
-	for _, t := range bd.Transactions {
-		for j, y := range node.transactionsPool {
-			if bytes.Equal(y.Sign, t.T.Sign) {
-				//delete
-				node.transactionsPool = append(node.transactionsPool[:j], node.transactionsPool[j+1:]...)
-			}
-		}
-	}
-}
-func (node *AkhNode) Attach(b *Block) {
-	node.Head.Next = b
-	node.Head = b
-}
-
-func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
-	genesis := CreateGenesis()
-	transactionPool := make([]Transaction, 0, 100) //magic constant
-
-	host := p2p.StartHost(port, privateKey)
-
-	node = &AkhNode{
-		transactionsPool: transactionPool,
-		Genesis:          genesis,
-		Head:             genesis,
-		Host:             host,
-	}
-
-	brp := &p2p.BlockStreamHandler{Genesis: genesis}
-	host.AddStreamHandler(brp)
-
-	trp := &p2p.TransactionStreamHandler{ProcessResult: node.ReceiveTransaction}
-	host.AddStreamHandler(trp)
-
-	abrp := &p2p.AnnouncedBlockStreamHandler{ProcessResult: node.Receive}
-	host.AddStreamHandler(abrp)
-
-	//host.DumpHostInfo()
-	host.DiscoverPeers()
-	return
-}
+var log = logging.Logger("main")
 
 const privateKeyFileName = "id_rsa"
 
@@ -127,7 +26,9 @@ func main() {
 	//3) User-specified on the command line
 
 	logging.LevelError()
-	//logging.LevelDebug()
+	//logging.LevelDebug() //to see libp2p debug messages :
+	logging.SetLogLevel("main", "DEBUG")
+	logging.SetLogLevel("p2p", "DEBUG")
 
 	port := flag.Int("p", p2p.DefaultPort,
 		fmt.Sprintf("port where to start local host, %d will be used by default", p2p.DefaultPort))
@@ -136,7 +37,7 @@ func main() {
 
 	flag.Parse()
 
-	fmt.Println("AkhCoin 0.1. Welcome!")
+	console.Println("AkhCoin 0.1. Welcome!")
 
 	var keyBytes []byte
 	var readKeyErr error
@@ -144,7 +45,7 @@ func main() {
 	if len(*keyPath) > 0 {
 		keyBytes, readKeyErr = ioutil.ReadFile(*keyPath)
 		if readKeyErr != nil {
-			log.Println(fmt.Errorf("Failed to read key file: %s\n", readKeyErr))
+			log.Error(fmt.Errorf("Failed to read key file: %s\n", readKeyErr))
 		}
 	}
 
@@ -196,8 +97,6 @@ func main() {
 	// by default, new shell includes 'exit', 'help' and 'clear' commands.
 	shell := ishell.New()
 
-	//shell.Println("Type \"help\" to see available commands:")
-
 	shell.AddCmd(&ishell.Cmd{
 		Name: "p",
 		Help: "pay user",
@@ -210,9 +109,12 @@ func main() {
 		Name: "g",
 		Help: "generate block",
 		Func: func(c *ishell.Context) {
-			block, err := node.Produce()
-			c.Printf("%s: New Block hash = %s, error: %s\n", node.Host.ID(), block.Hash, err)
-			node.Produce()
+			_, err := node.Produce()
+			if err != nil {
+				err = fmt.Errorf("Failed to produce new block: %s\n", err)
+				c.Err(err)
+				log.Warning(err)
+			}
 		},
 	})
 
@@ -269,12 +171,11 @@ func startHttpServer(node *AkhNode, port *int) {
 func (node *AkhNode) testPay() {
 	host := node.Host
 	private := node.Host.Peerstore().PrivKey(host.ID())
-	//log.Println(private)
 
 	rand.Seed(time.Now().UnixNano())
 	peerIDs := host.Peerstore().Peers()
 	if len(peerIDs) <= 1 {
-		log.Println("TEMP: no peers")
+		log.Debugf("TEMP: no peers")
 		return
 	}
 	i := rand.Intn(len(peerIDs) - 1)
@@ -282,28 +183,6 @@ func (node *AkhNode) testPay() {
 
 	t := Pay(private, peerIDs[i], s)
 
-	log.Printf("### Just created txn: %s\n", t)
+	log.Debugf("Just created txn: %s\n", t)
 	host.PublishTransaction(t)
-}
-
-func (node *AkhNode) initialBlockDownload() {
-	for _, peerID := range node.Host.Peerstore().Peers() {
-		log.Printf("%s requesting block from %s\n", node.Host.ID(), peerID)
-		block, err := node.Host.GetBlock(peerID, singleBlockCallback)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		for block != nil {
-			valid, err := Validate(block, node.Head)
-			if !valid {
-				log.Println(err)
-				//TODO
-			}
-			node.Attach(block)
-			block = block.Next
-		}
-	}
-}
-func singleBlockCallback(blockData interface{}) {
 }

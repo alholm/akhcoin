@@ -4,23 +4,22 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
 	"github.com/libp2p/go-libp2p-crypto"
 	inet "github.com/libp2p/go-libp2p-net"
 	"github.com/libp2p/go-libp2p-peer"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
 	"github.com/libp2p/go-libp2p-swarm"
 	ma "github.com/multiformats/go-multiaddr"
-
+	logging "github.com/ipfs/go-log"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
-	"github.com/libp2p/go-libp2p-host"
 	"github.com/multiformats/go-multicodec"
 	json "github.com/multiformats/go-multicodec/json"
 	"github.com/libp2p/go-libp2p-protocol"
-	//"github.com/libp2p/go-libp2p/p2p/discovery"
-	//"time"
-	//"os"
+	"github.com/libp2p/go-libp2p/p2p/discovery"
+	"time"
 )
+
+var log = logging.Logger("p2p")
 
 type AkhHost struct {
 	bhost.BasicHost
@@ -69,14 +68,6 @@ func WrapStream(s inet.Stream) *WrappedStream {
 	}
 }
 
-type DiscoveryNotifee struct {
-	h host.Host
-}
-
-func (n *DiscoveryNotifee) HandlePeerFound(pi pstore.PeerInfo) {
-	n.h.Connect(context.Background(), pi)
-}
-
 func StartHost(port int, privateKey []byte) AkhHost {
 	//private, public, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	private, err := crypto.UnmarshalPrivateKey(privateKey)
@@ -95,19 +86,22 @@ func StartHost(port int, privateKey []byte) AkhHost {
 	n, err := swarm.NewNetwork(context.Background(), []ma.Multiaddr{listen}, pid, ps, nil)
 	handleStartingHostErr(err)
 	basicHost := bhost.New(n)
-
-	//dnsService, err := discovery.NewMdnsService(context.Background(), basicHost, time.Second, "akhcoin")
-	////libp2p dicovery switches stderr logging off because mdns floods it, so returning it back (temp solution)
-	//log.SetOutput(os.Stderr)
-	//
-	//notifee := &DiscoveryNotifee{basicHost}
-	//dnsService.RegisterNotifee(notifee)
 	akhHost := AkhHost{*basicHost}
+
+	//TODO use cancelable context as we cant increase interval (first invocation will be after that interval)
+	dnsService, err := discovery.NewMdnsService(context.Background(), basicHost, time.Second, "akhcoin")
+	if err != nil {
+		log.Errorf("Failed to start mdns service: %s\n", err)
+	}
+	//libp2p dicovery switches stderr logging off because mdns floods it, this is how maybe returned back:
+	//commonLog.SetOutput(os.Stderr) //import commonLog "log"
+	notifee := &DiscoveryNotifee{akhHost}
+	dnsService.RegisterNotifee(notifee)
 
 	//TODO temp, think where it belongs
 	drp := &DiscoverStreamHandler{&ps}
 	akhHost.AddStreamHandler(drp)
-	log.Printf("DEBUG: host %s %s on %v started\n", akhHost.ID().Pretty(), akhHost.ID(), []ma.Multiaddr{listen})
+	log.Infof("Host %s %s on %v started\n", akhHost.ID().Pretty(), akhHost.ID(), []ma.Multiaddr{listen})
 
 	return akhHost
 }
@@ -124,11 +118,11 @@ type StreamHandler interface {
 
 func (h *AkhHost) AddStreamHandler(handler StreamHandler) {
 	h.SetStreamHandler(handler.protocol(), func(stream inet.Stream) {
-		log.Printf("%s: Received %s stream from %s", h.ID(), handler.protocol(), stream.Conn().RemotePeer())
+		log.Debugf("%s: Received %s stream from %s", h.ID().Pretty(), handler.protocol(), stream.Conn().RemotePeer().Pretty())
 		ws := WrapStream(stream)
 		defer stream.Close()
 		handler.handle(ws)
-		log.Printf("%s: %s stream from %s processing finished", h.ID(), handler.protocol(), stream.Conn().RemotePeer())
+		log.Debugf("%s: %s stream from %s processing finished", h.ID().Pretty(), handler.protocol(), stream.Conn().RemotePeer().Pretty())
 	})
 }
 
