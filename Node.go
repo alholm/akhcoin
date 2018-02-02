@@ -2,9 +2,16 @@ package main
 
 import (
 	. "akhcoin/blockchain"
-	"fmt"
 	"akhcoin/p2p"
 	"bytes"
+	"fmt"
+	"math/rand"
+	"sync"
+	"time"
+
+	"github.com/libp2p/go-libp2p-crypto"
+	"github.com/libp2p/go-libp2p-peer"
+	"akhcoin/consensus"
 )
 
 type Node interface {
@@ -20,18 +27,37 @@ type Node interface {
 type AkhNode struct {
 	Host             p2p.AkhHost
 	transactionsPool []Transaction //TODO avoid duplication (can't just use map of T as T has byte arrays which don't define equity
+	poll             *consensus.Poll
 	Genesis          *Block
 	Head             *Block
+	sync.Mutex
 }
 
-func (*AkhNode) Vote(sign string, addr string) {
-	panic("implement me")
+func (node *AkhNode) Vote(peerIdStr string) {
+	var peerId peer.ID
+	if len(peerIdStr) == 0 {
+		peerId = node.getRandomPeer()
+		if &peerId == nil {
+			return
+		}
+	} else {
+		var err error
+		peerId, err = peer.IDB58Decode(peerIdStr)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+	}
+
+	vote := NewVote(node.GetPrivate(), peerId)
+	node.Host.PublishVote(vote)
 }
 
 func (node *AkhNode) Produce() (block *Block, err error) {
 	pool := node.transactionsPool
 	if len(pool) == 0 {
 		err = fmt.Errorf("no transactions in pool, no block needed")
+		// log.Info(err)
 		return
 	}
 	privateKey := node.Host.Peerstore().PrivKey(node.Host.ID())
@@ -41,7 +67,7 @@ func (node *AkhNode) Produce() (block *Block, err error) {
 	//TODO ATTENTION! RACE CONDITION, has to be guarded
 	node.transactionsPool = pool[:0]
 
-	log.Infof("%s: New Block hash = %s, error: %s\n", node.Host.ID().Pretty(), block.Hash, err)
+	log.Infof("%s: New Block hash = %s\n", node.Host.ID().Pretty(), block.Hash)
 
 	return
 }
@@ -52,9 +78,20 @@ func (node *AkhNode) Announce(block *Block) (err error) {
 }
 
 func (node *AkhNode) ReceiveTransaction(t Transaction) {
-	verified, _ := t.Verify()
+	verified, err := t.Verify()
 	log.Debugf("Txn received: %s, VERIFIED=%t\n", &t, verified)
-	//TODO ATTENTION! RACE CONDITION
+	if err != nil {
+		log.Warningf("Invalid transaction received: %s\n", err)
+		return
+	}
+
+	node.addTransactionToPool(t)
+}
+
+//Synchronous operation, consider using channels
+func (node *AkhNode) addTransactionToPool(t Transaction) {
+	node.Lock()
+	defer node.Unlock()
 	node.transactionsPool = append(node.transactionsPool, t)
 }
 
@@ -68,9 +105,10 @@ func (node *AkhNode) Receive(bd BlockData) {
 		log.Error(err)
 		return
 	}
-
 	node.Attach(block)
 
+	node.Lock()
+	defer node.Unlock()
 	for _, t := range bd.Transactions {
 		for j, y := range node.transactionsPool {
 			if bytes.Equal(y.Sign, t.T.Sign) {
@@ -80,9 +118,28 @@ func (node *AkhNode) Receive(bd BlockData) {
 		}
 	}
 }
+
 func (node *AkhNode) Attach(b *Block) {
 	node.Head.Next = b
 	node.Head = b
+}
+
+func (node *AkhNode) ReceiveVote(v Vote) {
+	verified, err := v.Verify()
+	log.Debugf("Vote received: %s, VERIFIED=%t\n", &v, verified)
+	if err != nil {
+		log.Warningf("Invalid vote received: %s\n", err)
+		return
+	}
+
+	err = node.poll.SubmitVoteFor(v.Candidate)
+	if err != nil {
+		log.Errorf("Failed to submit vote: %s\n", err)
+	}
+}
+
+func (node *AkhNode) GetPrivate() crypto.PrivKey {
+	return node.Host.Peerstore().PrivKey(node.Host.ID())
 }
 
 func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
@@ -93,6 +150,7 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 
 	node = &AkhNode{
 		transactionsPool: transactionPool,
+		poll:             consensus.NewPoll(1),
 		Genesis:          genesis,
 		Head:             genesis,
 		Host:             host,
@@ -107,9 +165,36 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 	abrp := &p2p.AnnouncedBlockStreamHandler{ProcessResult: node.Receive}
 	host.AddStreamHandler(abrp)
 
+	vrp := &p2p.VoteStreamHandler{ProcessResult: node.ReceiveVote}
+	host.AddStreamHandler(vrp)
+
 	//host.DumpHostInfo()
 	host.DiscoverPeers()
+
+	go func() {
+
+		ticker := time.NewTicker(3 * time.Second)
+
+		for range ticker.C {
+			if node.isElected() {
+				block, err := node.Produce()
+				if err != nil {
+					// log.Error(err)
+					continue
+				}
+				err = node.Announce(block)
+				if err != nil {
+					log.Error(err)
+				}
+			}
+		}
+	}()
+
 	return
+}
+
+func (node *AkhNode) isElected() bool {
+	return node.poll.IsElected(node.Host.ID().Pretty())
 }
 
 func (node *AkhNode) initialBlockDownload() {
@@ -133,4 +218,31 @@ func (node *AkhNode) initialBlockDownload() {
 }
 
 func singleBlockCallback(blockData interface{}) {
+}
+
+func (node *AkhNode) testPay() {
+	peer := node.getRandomPeer()
+
+	if peer == "" {
+		return
+	}
+	s := rand.Uint64()
+
+	private := node.GetPrivate()
+	t := Pay(private, peer, s)
+
+	log.Debugf("Just created txn: %s\n", t)
+	node.Host.PublishTransaction(t)
+}
+
+func (node *AkhNode) getRandomPeer() peer.ID {
+	peerIDs := node.Host.Peerstore().Peers()
+	if len(peerIDs) <= 1 {
+		log.Debugf("TEMP: no peers")
+		return ""
+	}
+	rand.Seed(time.Now().UnixNano())
+	i := rand.Intn(len(peerIDs) - 1)
+
+	return peerIDs[i]
 }

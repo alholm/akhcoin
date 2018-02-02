@@ -15,7 +15,7 @@ func ExampleNewBlock() {
 	block := NewBlock(priv, parent, []Transaction{*t})
 	verified, _ := verify(block)
 	fmt.Println(verified)
-	block.Nonce = uuid.NewV1()
+	block.Nonce, _ = uuid.NewV1()
 	verified, _ = verify(block)
 	fmt.Println(verified)
 	// Output:

@@ -1,18 +1,17 @@
 package main
 
 import (
-	. "akhcoin/blockchain"
-	"fmt"
 	"akhcoin/p2p"
 	"flag"
-	console "log"
-	"math/rand"
-	"time"
-	"net/http"
-	logging "github.com/ipfs/go-log"
-	"github.com/abiosoft/ishell"
-	"github.com/libp2p/go-libp2p-crypto"
+	"fmt"
 	"io/ioutil"
+	console "log"
+	"net/http"
+	"os"
+
+	"github.com/abiosoft/ishell"
+	logging "github.com/ipfs/go-log"
+	"github.com/libp2p/go-libp2p-crypto"
 )
 
 var log = logging.Logger("main")
@@ -26,9 +25,11 @@ func main() {
 	//3) User-specified on the command line
 
 	logging.LevelError()
-	//logging.LevelDebug() //to see libp2p debug messages :
+	//logging.LevelDebug() //to see all libp2p debug messages :
 	logging.SetLogLevel("main", "DEBUG")
 	logging.SetLogLevel("p2p", "DEBUG")
+	logging.SetLogLevel("consensus", "DEBUG")
+	// logging.SetLogLevel("mdns", "DEBUG")
 
 	port := flag.Int("p", p2p.DefaultPort,
 		fmt.Sprintf("port where to start local host, %d will be used by default", p2p.DefaultPort))
@@ -45,7 +46,7 @@ func main() {
 	if len(*keyPath) > 0 {
 		keyBytes, readKeyErr = ioutil.ReadFile(*keyPath)
 		if readKeyErr != nil {
-			log.Error(fmt.Errorf("Failed to read key file: %s\n", readKeyErr))
+			log.Error(fmt.Errorf("failed to read key file: %s", readKeyErr))
 		}
 	}
 
@@ -68,7 +69,7 @@ func main() {
 					c.Println("Private key successfully added")
 					c.Stop()
 				} else {
-					c.Err(fmt.Errorf("Failed to read key file: %s\n", readKeyErr))
+					c.Err(fmt.Errorf("failed to read key file: %s", readKeyErr))
 				}
 			},
 		})
@@ -82,8 +83,17 @@ func main() {
 					c.Println("Private key successfully added")
 					c.Stop()
 				} else {
-					c.Err(fmt.Errorf("Failed to generate keys: %s\n", readKeyErr))
+					c.Err(fmt.Errorf("failed to generate keys: %s", readKeyErr))
 				}
+			},
+		})
+
+		preShell.AddCmd(&ishell.Cmd{
+			Name: "exit",
+			Help: "exit the program",
+			Func: func(c *ishell.Context) {
+				c.Stop()
+				os.Exit(0)
 			},
 		})
 
@@ -111,7 +121,7 @@ func main() {
 		Func: func(c *ishell.Context) {
 			_, err := node.Produce()
 			if err != nil {
-				err = fmt.Errorf("Failed to produce new block: %s\n", err)
+				err = fmt.Errorf("failed to produce new block: %s", err)
 				c.Err(err)
 				log.Warning(err)
 			}
@@ -141,6 +151,18 @@ func main() {
 		},
 	})
 
+	shell.AddCmd(&ishell.Cmd{
+		Name: "v",
+		Help: "vote, format: vote <Peer ID>",
+		Func: func(c *ishell.Context) {
+			peerId := ""
+			if len(c.Args) > 0 {
+				peerId = c.Args[0]
+			}
+			node.Vote(peerId)
+		},
+	})
+
 	shell.Print(shell.HelpText())
 
 	shell.Run()
@@ -166,23 +188,4 @@ func startHttpServer(node *AkhNode, port *int) {
 	}
 	http.HandleFunc("/", viewHandler)
 	go http.ListenAndServe(fmt.Sprintf(":%d", *port-1000), nil)
-}
-
-func (node *AkhNode) testPay() {
-	host := node.Host
-	private := node.Host.Peerstore().PrivKey(host.ID())
-
-	rand.Seed(time.Now().UnixNano())
-	peerIDs := host.Peerstore().Peers()
-	if len(peerIDs) <= 1 {
-		log.Debugf("TEMP: no peers")
-		return
-	}
-	i := rand.Intn(len(peerIDs) - 1)
-	s := rand.Uint64()
-
-	t := Pay(private, peerIDs[i], s)
-
-	log.Debugf("Just created txn: %s\n", t)
-	host.PublishTransaction(t)
 }

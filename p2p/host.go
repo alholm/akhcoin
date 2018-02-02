@@ -4,19 +4,20 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"time"
+
+	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
 	inet "github.com/libp2p/go-libp2p-net"
 	"github.com/libp2p/go-libp2p-peer"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
+	"github.com/libp2p/go-libp2p-protocol"
 	"github.com/libp2p/go-libp2p-swarm"
-	ma "github.com/multiformats/go-multiaddr"
-	logging "github.com/ipfs/go-log"
+	"github.com/libp2p/go-libp2p/p2p/discovery"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multicodec"
 	json "github.com/multiformats/go-multicodec/json"
-	"github.com/libp2p/go-libp2p-protocol"
-	"github.com/libp2p/go-libp2p/p2p/discovery"
-	"time"
 )
 
 var log = logging.Logger("p2p")
@@ -88,15 +89,7 @@ func StartHost(port int, privateKey []byte) AkhHost {
 	basicHost := bhost.New(n)
 	akhHost := AkhHost{*basicHost}
 
-	//TODO use cancelable context as we cant increase interval (first invocation will be after that interval)
-	dnsService, err := discovery.NewMdnsService(context.Background(), basicHost, time.Second, "akhcoin")
-	if err != nil {
-		log.Errorf("Failed to start mdns service: %s\n", err)
-	}
-	//libp2p dicovery switches stderr logging off because mdns floods it, this is how maybe returned back:
-	//commonLog.SetOutput(os.Stderr) //import commonLog "log"
-	notifee := &DiscoveryNotifee{akhHost}
-	dnsService.RegisterNotifee(notifee)
+	akhHost.startMdnsDiscovery()
 
 	//TODO temp, think where it belongs
 	drp := &DiscoverStreamHandler{&ps}
@@ -105,6 +98,19 @@ func StartHost(port int, privateKey []byte) AkhHost {
 
 	return akhHost
 }
+
+func (h *AkhHost) startMdnsDiscovery() {
+	dnsService, err := discovery.NewMdnsService(context.Background(), &h.BasicHost, 2*time.Minute, "akhcoin")
+	if err != nil {
+		log.Errorf("Failed to start mdns service: %s\n", err)
+		return
+	}
+	//libp2p dicovery switches stderr logging off because mdns floods it, this is how maybe returned back:
+	//commonLog.SetOutput(os.Stderr) //import commonLog "log"
+	notifee := &DiscoveryNotifee{h}
+	dnsService.RegisterNotifee(notifee)
+}
+
 func handleStartingHostErr(err error) {
 	if err != nil {
 		log.Fatal(fmt.Errorf("Failed to start host: %v\n", err))

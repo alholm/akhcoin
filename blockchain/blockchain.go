@@ -1,12 +1,15 @@
 package blockchain
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"bytes"
-	"github.com/satori/go.uuid"
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+	"time"
+
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
+	"github.com/satori/go.uuid"
 )
 
 type BlockData struct {
@@ -17,6 +20,7 @@ type BlockData struct {
 	Sign         []byte
 	Signer       string
 	PublicKey    []byte
+	TimeStamp    int64
 }
 
 func (b *BlockData) GetSigner() string {
@@ -35,6 +39,10 @@ func (b *BlockData) GetCorpus() []byte {
 	for _, t := range b.Transactions {
 		corpus.Write(t.T.Sign)
 	}
+	timeStampBytes := make([]byte, 16)
+	binary.PutVarint(timeStampBytes, b.TimeStamp)
+	corpus.Write(timeStampBytes)
+
 	return corpus.Bytes()
 }
 
@@ -77,6 +85,7 @@ func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction) 
 	}
 	block.Hash = Hash(block.GetCorpus())
 	parent.Next = block
+	block.TimeStamp = GetTimeStamp()
 
 	//TODO error handling
 	id, _ := peer.IDFromPrivateKey(privateKey)
@@ -86,6 +95,13 @@ func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction) 
 
 	return block
 }
+
+//GetTimeStamp returns current timestamp
+//TODO implement network time adjustment
+func GetTimeStamp() int64 {
+	return time.Now().UnixNano()
+}
+
 func (b *Block) lastTransaction() (t *Transaction) {
 	l := len(b.Transactions)
 	if l > 0 {
@@ -119,15 +135,34 @@ func Hash(bytes []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(bytes))
 }
 
+
+func verify(s Signable) (result bool, err error) {
+
+	result = false
+	id, err := peer.IDB58Decode(s.GetSigner())
+	if err != nil {
+		return
+	}
+	public, err := crypto.UnmarshalPublicKey(s.GetPublicKey())
+	if err != nil {
+		return
+	}
+
+	if id.MatchesPublicKey(public) {
+		result, err = public.Verify(s.GetCorpus(), s.GetSign())
+	}
+	return
+}
+
 func Validate(block *Block, chainHead *Block) (valid bool, err error) {
 	valid, err = verify(block)
 	if !valid {
-		err = fmt.Errorf("Invalid block: %s: %s\n", block.Hash, err)
+		err = fmt.Errorf("invalid block: %s: %s", block.Hash, err)
 		return
 	}
 
 	if block.ParentHash != chainHead.Hash {
-		err = fmt.Errorf("Wrong block sequance: block: %s parent hash = %s, chain head hash = %s\n",
+		err = fmt.Errorf("wrong block sequance: block: %s parent hash = %s, chain head hash = %s",
 			block.Hash, block.ParentHash, chainHead.Hash)
 		return
 	}
@@ -136,7 +171,7 @@ func Validate(block *Block, chainHead *Block) (valid bool, err error) {
 		transaction := t.T
 		valid, err := verify(transaction)
 		if !valid {
-			err = fmt.Errorf("Invalid transaction in block: %s sent %d to %s: %s\n", transaction.GetSigner(),
+			err = fmt.Errorf("invalid transaction in block: %s sent %d to %s: %s", transaction.GetSigner(),
 				transaction.Amount, transaction.Recipient, err)
 			break
 		}

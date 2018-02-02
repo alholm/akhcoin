@@ -2,15 +2,16 @@ package p2p
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/libp2p/go-libp2p-peer"
 	ps "github.com/libp2p/go-libp2p-peerstore"
-	ma "github.com/multiformats/go-multiaddr"
-	"strings"
-	"os"
 	"github.com/libp2p/go-libp2p-protocol"
-	"context"
-	"time"
+	ma "github.com/multiformats/go-multiaddr"
 )
 
 const HostsInfoPath = "/tmp/akhhosts.info"
@@ -218,7 +219,7 @@ func (h *AkhHost) DumpHostInfo() (err error) {
 }
 
 type DiscoveryNotifee struct {
-	h AkhHost
+	h *AkhHost
 }
 
 func (n *DiscoveryNotifee) HandlePeerFound(peerInfo ps.PeerInfo) {

@@ -1,12 +1,13 @@
 package p2p
 
 import (
-	"context"
-	"github.com/libp2p/go-libp2p-peer"
 	"akhcoin/blockchain"
-	"sync"
-	"github.com/libp2p/go-libp2p-protocol"
+	"context"
 	"io"
+	"sync"
+
+	"github.com/libp2p/go-libp2p-peer"
+	"github.com/libp2p/go-libp2p-protocol"
 )
 
 const protocolsPrefix = "ip4/akhcoin.org/tcp/"
@@ -16,6 +17,7 @@ const (
 	TransactionProto               = protocolsPrefix + "transaction/1.0.0"
 	BlockAnnounceProto             = protocolsPrefix + "blockAnnounce/1.0.0"
 	DiscoverProto                  = protocolsPrefix + "discover/1.0.0"
+	VoteAnnounceProto              = protocolsPrefix + "vote/1.0.0"
 )
 
 type GetBlockMessage struct {
@@ -100,6 +102,25 @@ func (*AnnouncedBlockStreamHandler) protocol() protocol.ID {
 	return BlockAnnounceProto
 }
 
+type VoteStreamHandler struct {
+	ProcessResult func(v blockchain.Vote)
+}
+
+func (vrp *VoteStreamHandler) handle(ws *WrappedStream) {
+	var v blockchain.Vote
+	err := receiveMessage(&v, ws)
+	if err != nil {
+		log.Warningf("Failed to process Vote msg: %s\n", err)
+		return
+	}
+
+	vrp.ProcessResult(v)
+}
+
+func (*VoteStreamHandler) protocol() protocol.ID {
+	return VoteAnnounceProto
+}
+
 func (h *AkhHost) GetBlock(peerID peer.ID, someFunc func(o interface{})) (*blockchain.Block, error) {
 	msg := &GetBlockMessage{}
 	ws, err := h.SendMessage(msg, peerID, BlockProto)
@@ -142,6 +163,9 @@ func (h *AkhHost) PublishTransaction(t *blockchain.Transaction) {
 func (h *AkhHost) PublishBlock(b *blockchain.Block) {
 	h.publish(&b.BlockData, BlockAnnounceProto)
 }
+func (h *AkhHost) PublishVote(v *blockchain.Vote) {
+	h.publish(v, VoteAnnounceProto)
+}
 
 //TODO error handling, conditional peers selection
 func (h *AkhHost) publish(t interface{}, proto protocol.ID) {
@@ -150,11 +174,11 @@ func (h *AkhHost) publish(t interface{}, proto protocol.ID) {
 		wg.Add(1)
 		go func(peerID peer.ID) {
 			defer wg.Done()
-			log.Debugf("Txn published to %s - %s \n", peerID.Pretty(), h.Peerstore().Addrs(peerID))
+			log.Debugf("%T published to %s - %s \n", t, peerID.Pretty(), h.Peerstore().Addrs(peerID))
 			stream, err := h.NewStream(context.Background(), peerID, proto)
 			//defer stream.Close()
 			if err != nil {
-				log.Warningf("Error publishing transaction to %s: %s\n", peerID.Pretty(), err)
+				log.Warningf("Error publishing %T to %s: %s\n", t, peerID.Pretty(), err)
 				return
 			}
 			ws := WrapStream(stream)

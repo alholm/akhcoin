@@ -55,24 +55,6 @@ func (t *Transaction) Verify() (result bool, err error) {
 	return verify(t)
 }
 
-func verify(s Signable) (result bool, err error) {
-
-	result = false
-	id, err := peer.IDB58Decode(s.GetSigner())
-	if err != nil {
-		return
-	}
-	public, err := crypto.UnmarshalPublicKey(s.GetPublicKey())
-	if err != nil {
-		return
-	}
-
-	if id.MatchesPublicKey(public) {
-		result, err = public.Verify(s.GetCorpus(), s.GetSign())
-	}
-	return
-}
-
 func Pay(private crypto.PrivKey, recipient peer.ID, amount uint64) *Transaction {
 
 	sender, _ := peer.IDFromPrivateKey(private)
