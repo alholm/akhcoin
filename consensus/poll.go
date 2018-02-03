@@ -2,7 +2,6 @@ package consensus
 
 import (
 	logging "github.com/ipfs/go-log"
-	"sort"
 )
 
 var log = logging.Logger("consensus")
@@ -11,7 +10,7 @@ type Poll struct {
 	votesChan    chan string
 	newRoundChan chan struct{}
 	votes        map[string]int
-	top          sorted
+	top          []Candidate
 	maxElected   int
 }
 
@@ -22,7 +21,7 @@ type Candidate struct {
 
 func NewPoll(maxElected int) *Poll {
 	votes := make(map[string]int)
-	top := make(sorted, 0, maxElected)
+	top := make([]Candidate, 0, maxElected)
 
 	poll := &Poll{votesChan: make(chan string), newRoundChan: make(chan struct{}), votes: votes, top: top, maxElected: maxElected}
 
@@ -45,54 +44,57 @@ func (p *Poll) startListening() {
 		case <-p.newRoundChan:
 			//TODO consider clearing by range deletion to decrease GC load
 			p.votes = make(map[string]int)
-			p.top = make(sorted, 0, p.maxElected)
+			p.top = make([]Candidate, 0, p.maxElected)
 		}
 	}
 }
 
-type sorted []Candidate
-
-func (s sorted) minVotes() int {
-	if len(s) == cap(s) {
-		return s[len(s)-1].votes
+//Returns minimal number of votes required to be elected in current round, i.e number of votes for last candidate
+func (p *Poll) minVotes() int {
+	if len(p.top) == cap(p.top) {
+		return p.top[len(p.top)-1].votes
 	}
 	return 0
 }
 
-func (s sorted) Len() int {
-	return len(s)
-}
-
-func (s sorted) Less(i, j int) bool {
-	return s[i].votes > s[j].votes
-}
-
-func (s sorted) Swap(i, j int) {
-	t := s[i]
-	s[i] = s[j]
-	s[j] = t
-
-}
-
 func (p *Poll) insert(newCandidate Candidate) {
-	defer sort.Sort(p.top)
-	if len(p.top) == 0 {
+
+	if len(p.top) == p.maxElected && newCandidate.votes <= p.top[p.maxElected-1].votes {
+		return
+	}
+
+	i := getPosition(p.top, newCandidate)
+	if i != -1 {
+		p.top[i] = newCandidate
+	} else if len(p.top) < p.maxElected {
 		p.top = append(p.top, newCandidate)
+		i = len(p.top) - 1
 	} else {
-		if len(p.top) < p.maxElected || newCandidate.votes > p.top[p.maxElected-1].votes {
-			for i := 0; i < len(p.top); i++ {
-				if p.top[i].id == newCandidate.id {
-					p.top[i] = newCandidate
-					return
-				}
-			}
-			if len(p.top) < p.maxElected {
-				p.top = append(p.top, newCandidate)
-			} else {
-				p.top[p.maxElected-1] = newCandidate
-			}
+		i = p.maxElected - 1
+		p.top[i] = newCandidate
+	}
+
+	for j := 0; j < i; j++ {
+		if p.top[j].votes < newCandidate.votes {
+			temp := p.top[j]
+			p.top[j] = newCandidate
+			p.top[i] = temp
+			break
 		}
 	}
+
+}
+
+//can be optimised with binary search, but probably doesn't worth it as max len(top) usually <= 51
+func getPosition(top []Candidate, candidate Candidate) int {
+	position := -1
+	for i := 0; i < len(top); i++ {
+		if top[i].id == candidate.id {
+			position = i
+			break
+		}
+	}
+	return position
 }
 
 func (p *Poll) IsElected(candidate string) (result bool) {
@@ -100,9 +102,7 @@ func (p *Poll) IsElected(candidate string) (result bool) {
 		return
 	}
 	votesN := p.votes[candidate]
-	lastCandidateVotes := p.top.minVotes()
-
-	if votesN >= lastCandidateVotes {
+	if votesN >= p.minVotes() {
 		result = true
 	}
 	return
@@ -114,10 +114,6 @@ func (p *Poll) SubmitVoteFor(candidate string) (err error) {
 	p.votesChan <- candidate
 	return
 }
-
-//func (p *Poll) Size() int {
-//	return len(p.votes)
-//}
 
 func (p *Poll) StartNewRound() {
 	p.newRoundChan <- struct{}{}

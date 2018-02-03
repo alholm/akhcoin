@@ -14,11 +14,12 @@ func init() {
 func TestPoll_IsElected(t *testing.T) {
 	poll := NewPoll(3)
 	var wg sync.WaitGroup
-	wg.Add(4)
-	go poll.voteForNTimes("winner", 9, &wg)
-	go poll.voteForNTimes("second", 7, &wg)
-	go poll.voteForNTimes("thirdd", 5, &wg)
-	go poll.voteForNTimes("loserr", 3, &wg)
+	wg.Add(5)
+	go poll.voteForNTimes("winner", 15, &wg)
+	go poll.voteForNTimes("second", 13, &wg)
+	go poll.voteForNTimes("thirdd", 11, &wg)
+	go poll.voteForNTimes("loser1", 1, &wg)
+	go poll.voteForNTimes("loser2", 10, &wg)
 
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond)
@@ -35,8 +36,12 @@ func TestPoll_IsElected(t *testing.T) {
 		t.Fatal("Third not elected\n", poll.top)
 	}
 
-	if poll.IsElected("loserr") {
-		t.Fatal("loser is elected\n", poll.top)
+	if poll.IsElected("loser1") {
+		t.Fatal("loser1 is elected\n", poll.top)
+	}
+
+	if poll.IsElected("loser2") {
+		t.Fatal("loser2 is elected\n", poll.top)
 	}
 
 	poll.StartNewRound()
@@ -44,7 +49,7 @@ func TestPoll_IsElected(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	votesLen := len(poll.votes)
-	topLen := poll.top.Len()
+	topLen := len(poll.top)
 	if votesLen != 0 && topLen != 0 {
 		t.Fatalf("new round not started: votes len = %d, top len = %d", votesLen, topLen)
 	}
