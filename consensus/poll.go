@@ -2,6 +2,7 @@ package consensus
 
 import (
 	logging "github.com/ipfs/go-log"
+	"sort"
 )
 
 var log = logging.Logger("consensus")
@@ -63,29 +64,26 @@ func (p *Poll) insert(newCandidate Candidate) {
 		return
 	}
 
-	i := getPosition(p.top, newCandidate)
-	if i != -1 {
-		p.top[i] = newCandidate
+	insertedPos := getPosition(p.top, newCandidate)
+	if insertedPos != -1 {
+		p.top[insertedPos] = newCandidate
 	} else if len(p.top) < p.maxElected {
 		p.top = append(p.top, newCandidate)
-		i = len(p.top) - 1
+		insertedPos = len(p.top) - 1
 	} else {
-		i = p.maxElected - 1
-		p.top[i] = newCandidate
+		insertedPos = p.maxElected - 1
+		p.top[insertedPos] = newCandidate
 	}
 
-	for j := 0; j < i; j++ {
-		if p.top[j].votes < newCandidate.votes {
-			temp := p.top[j]
-			p.top[j] = newCandidate
-			p.top[i] = temp
-			break
-		}
-	}
+	requiredPos := sort.Search(insertedPos, func(j int) bool { return p.top[j].votes < newCandidate.votes })
 
+	if requiredPos != insertedPos {
+		temp := p.top[requiredPos]
+		p.top[requiredPos] = newCandidate
+		p.top[insertedPos] = temp
+	}
 }
 
-//can be optimised with binary search, but probably doesn't worth it as max len(top) usually <= 51
 func getPosition(top []Candidate, candidate Candidate) int {
 	position := -1
 	for i := 0; i < len(top); i++ {

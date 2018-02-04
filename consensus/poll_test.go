@@ -12,36 +12,34 @@ func init() {
 }
 
 func TestPoll_IsElected(t *testing.T) {
-	poll := NewPoll(3)
+	poll := NewPoll(5)
+
+	winners := map[string]int{"winner": 20, "second": 19, "thirdd": 17, "forthh": 11, "fifthh": 10}
+	losers := map[string]int{"loser1": 1, "loser2": 9, "loser3": 5}
+
 	var wg sync.WaitGroup
-	wg.Add(5)
-	go poll.voteForNTimes("winner", 15, &wg)
-	go poll.voteForNTimes("second", 13, &wg)
-	go poll.voteForNTimes("thirdd", 11, &wg)
-	go poll.voteForNTimes("loser1", 1, &wg)
-	go poll.voteForNTimes("loser2", 10, &wg)
+	wg.Add(8)
+
+	for candidate, votes := range winners {
+		go poll.voteForNTimes(candidate, votes, &wg)
+	}
+	for candidate, votes := range losers {
+		go poll.voteForNTimes(candidate, votes, &wg)
+	}
 
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond)
 
-	if !poll.IsElected("winner") {
-		t.Fatal("Winner not elected\n", poll.top)
+	for candidate := range winners {
+		if !poll.IsElected(candidate) {
+			t.Fatalf("%s not elected: %v\n", candidate, poll.top)
+		}
 	}
 
-	if !poll.IsElected("second") {
-		t.Fatal("Second not elected\n", poll.top)
-	}
-
-	if !poll.IsElected("thirdd") {
-		t.Fatal("Third not elected\n", poll.top)
-	}
-
-	if poll.IsElected("loser1") {
-		t.Fatal("loser1 is elected\n", poll.top)
-	}
-
-	if poll.IsElected("loser2") {
-		t.Fatal("loser2 is elected\n", poll.top)
+	for candidate := range losers {
+		if poll.IsElected(candidate) {
+			t.Fatalf("%s is elected: %v\n", candidate, poll.top)
+		}
 	}
 
 	poll.StartNewRound()
