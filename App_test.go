@@ -7,6 +7,7 @@ import (
 	"time"
 	"github.com/libp2p/go-libp2p-crypto"
 	logging "github.com/ipfs/go-log"
+	"akhcoin/blockchain"
 )
 
 func init() {
@@ -47,7 +48,7 @@ func TestInitialBlockDownload(t *testing.T) {
 	}
 }
 func startRandomNode(p int) *AkhNode {
-	private, _, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	private, _, _ := blockchain.NewKeys()
 	privateBytes, _ := crypto.MarshalPrivateKey(private)
 	node := NewAkhNode(p, privateBytes)
 	return node

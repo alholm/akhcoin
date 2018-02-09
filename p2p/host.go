@@ -70,7 +70,6 @@ func WrapStream(s inet.Stream) *WrappedStream {
 }
 
 func StartHost(port int, privateKey []byte) AkhHost {
-	//private, public, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	private, err := crypto.UnmarshalPrivateKey(privateKey)
 	handleStartingHostErr(err)
 	public := private.GetPublic()

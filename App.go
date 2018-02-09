@@ -12,6 +12,7 @@ import (
 	"github.com/abiosoft/ishell"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
+	"akhcoin/blockchain"
 )
 
 var log = logging.Logger("main")
@@ -171,7 +172,7 @@ func main() {
 }
 
 func generateAndDumpKeys() (privateBytes []byte, err error) {
-	private, public, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	private, public, _ := blockchain.NewKeys()
 	privateBytes, _ = crypto.MarshalPrivateKey(private)
 	err = ioutil.WriteFile(privateKeyFileName, privateBytes, 0644)
 	if err != nil {

@@ -2,13 +2,12 @@ package blockchain
 
 import (
 	"fmt"
-	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
 	"github.com/satori/go.uuid"
 )
 
 func ExampleNewBlock() {
-	priv, _, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	priv, _, _ := NewKeys()
 	t := Pay(priv, peer.ID("some"), 42)
 
 	parent := CreateGenesis()

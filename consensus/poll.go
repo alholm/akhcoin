@@ -3,16 +3,24 @@ package consensus
 import (
 	logging "github.com/ipfs/go-log"
 	"sort"
+	"akhcoin/blockchain"
+	"time"
 )
 
 var log = logging.Logger("consensus")
 
 type Poll struct {
-	votesChan    chan string
+	votesChan chan blockchain.Vote
+	candidatesChan chan struct {
+		id    string
+		votes int
+	}
 	newRoundChan chan struct{}
-	votes        map[string]int
+	votes        map[string]VoterInfo
 	top          []Candidate
-	maxElected   int
+	maxDelegates int
+	maxVotes     int
+	freezePeriod time.Duration
 }
 
 type Candidate struct {
@@ -20,32 +28,93 @@ type Candidate struct {
 	votes int
 }
 
-func NewPoll(maxElected int) *Poll {
-	votes := make(map[string]int)
-	top := make([]Candidate, 0, maxElected)
+type VoterInfo struct {
+	votes     int
+	votedFor  []string
+	timeStamp int64
+}
 
-	poll := &Poll{votesChan: make(chan string), newRoundChan: make(chan struct{}), votes: votes, top: top, maxElected: maxElected}
+//Creates new structure that counts incoming votes and maintains list of maxDelegates top voted candidates.
+//maxVotes is number of candidates one is allowed to vote for.
+//freezePeriod is time required to elapse before voter can vote again
+func NewPoll(maxDelegates int, maxVotes int, freezePeriod time.Duration) *Poll {
+	votes := make(map[string]VoterInfo)
+	top := make([]Candidate, 0, maxDelegates)
+
+	candidatesChan := make(chan struct {
+		id    string
+		votes int
+	}, 2)
+
+	poll := &Poll{
+		make(chan blockchain.Vote),
+		candidatesChan,
+		make(chan struct{}),
+		votes, top, maxDelegates, maxVotes, freezePeriod}
 
 	go poll.startListening()
 
 	return poll
 }
 
+func (p *Poll) processVote(vote blockchain.Vote) {
+	voter := vote.Voter
+	voterInfo := p.votes[voter]
+	if time.Duration(vote.TimeStamp-voterInfo.timeStamp) < p.freezePeriod {
+		//TODO extract to upper level and punish voter (DoS prevention)
+		return
+	}
+
+	candidate := vote.Candidate
+	for _, votedFor := range voterInfo.votedFor {
+		if votedFor == candidate {
+			return
+		}
+	}
+
+	voterInfo.votedFor = append(voterInfo.votedFor, candidate)
+
+	if len(voterInfo.votedFor) > p.maxVotes {
+		p.submitCandidate(voterInfo.votedFor[0], -1)
+		voterInfo.votedFor = append(voterInfo.votedFor[:0], voterInfo.votedFor[1:]...)
+	}
+	voterInfo.timeStamp = vote.TimeStamp
+	p.votes[voter] = voterInfo
+
+	p.submitCandidate(candidate, 1)
+
+}
+
+func (p *Poll) submitCandidate(id string, votes int) {
+	go func() {
+		p.candidatesChan <- struct {
+			id    string
+			votes int
+		}{id, votes}
+	}()
+}
+
 func (p *Poll) startListening() {
 	for {
 		select {
-		case candidate := <-p.votesChan:
-			p.votes[candidate]++
-			votesN := p.votes[candidate]
+		case vote := <-p.votesChan:
+			p.processVote(vote)
 
-			p.insert(Candidate{candidate, votesN})
+		case candidate := <-p.candidatesChan:
+			candidateInfo := p.votes[candidate.id]
+
+			candidateInfo.votes += candidate.votes
+			votesN := candidateInfo.votes
+			p.votes[candidate.id] = candidateInfo
+
+			p.insert(Candidate{candidate.id, votesN})
 
 			//log.Debugf("-> %s = %d ; %v", candidate, votesN, p.top)
 
 		case <-p.newRoundChan:
 			//TODO consider clearing by range deletion to decrease GC load
-			p.votes = make(map[string]int)
-			p.top = make([]Candidate, 0, p.maxElected)
+			p.votes = make(map[string]VoterInfo)
+			p.top = make([]Candidate, 0, p.maxDelegates)
 		}
 	}
 }
@@ -60,18 +129,18 @@ func (p *Poll) minVotes() int {
 
 func (p *Poll) insert(newCandidate Candidate) {
 
-	if len(p.top) == p.maxElected && newCandidate.votes <= p.top[p.maxElected-1].votes {
+	if len(p.top) == p.maxDelegates && newCandidate.votes <= p.top[p.maxDelegates-1].votes {
 		return
 	}
 
 	insertedPos := getPosition(p.top, newCandidate.id)
 	if insertedPos != -1 {
 		p.top[insertedPos] = newCandidate
-	} else if len(p.top) < p.maxElected {
+	} else if len(p.top) < p.maxDelegates {
 		p.top = append(p.top, newCandidate)
 		insertedPos = len(p.top) - 1
 	} else {
-		insertedPos = p.maxElected - 1
+		insertedPos = p.maxDelegates - 1
 		p.top[insertedPos] = newCandidate
 	}
 
@@ -99,7 +168,7 @@ func (p *Poll) IsElected(candidate string) (result bool) {
 	if len(p.top) == 0 {
 		return
 	}
-	votesN := p.votes[candidate]
+	votesN := p.votes[candidate].votes
 	if votesN >= p.minVotes() {
 		result = true
 	}
@@ -113,10 +182,10 @@ func (p *Poll) GetPosition(candidate string) int {
 	return getPosition(p.top, candidate)
 }
 
-func (p *Poll) SubmitVoteFor(candidate string) (err error) {
+func (p *Poll) SubmitVote(vote blockchain.Vote) (err error) {
 	//TODO
 	//if no active round err = ...; return
-	p.votesChan <- candidate
+	p.votesChan <- vote
 	return
 }
 
@@ -124,6 +193,6 @@ func (p *Poll) StartNewRound() {
 	p.newRoundChan <- struct{}{}
 }
 
-func (p *Poll) GetMaxElected() int{
-	return p.maxElected
+func (p *Poll) GetMaxElected() int {
+	return p.maxDelegates
 }

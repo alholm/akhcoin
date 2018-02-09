@@ -30,7 +30,7 @@ func (v *Vote) GetCorpus() []byte {
 	corpus := new(bytes.Buffer)
 	corpus.Write([]byte(v.Voter))
 	corpus.Write([]byte(v.Candidate))
-	timeStampBytes := make([]byte, 8)
+	timeStampBytes := make([]byte, 16)
 	binary.PutVarint(timeStampBytes, v.TimeStamp)
 	corpus.Write(timeStampBytes)
 	return corpus.Bytes()
@@ -42,6 +42,10 @@ func (v *Vote) GetSign() []byte {
 }
 
 func (v *Vote) Verify() (result bool, err error) {
+	if v.Voter == v.Candidate {
+		err = fmt.Errorf("self voting")
+		return
+	}
 	return verify(v)
 }
 
@@ -54,7 +58,7 @@ func NewVote(private crypto.PrivKey, candidate peer.ID) *Vote {
 	sender, _ := peer.IDFromPrivateKey(private)
 	public, _ := private.GetPublic().Bytes()
 
-	v := Vote{Voter: sender.Pretty(), Candidate: candidate.Pretty(), PublicKey: public}
+	v := Vote{Voter: sender.Pretty(), Candidate: candidate.Pretty(), PublicKey: public, TimeStamp: GetTimeStamp()}
 	sign, _ := private.Sign(v.GetCorpus())
 	v.Sign = sign
 

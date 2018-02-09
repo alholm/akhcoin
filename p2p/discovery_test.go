@@ -6,6 +6,7 @@ import (
 	"github.com/libp2p/go-libp2p-peerstore"
 	"github.com/libp2p/go-libp2p-crypto"
 	logging "github.com/ipfs/go-log"
+	"akhcoin/blockchain"
 )
 
 func init() {
@@ -49,7 +50,7 @@ func TestAkhHost_DiscoverPeers(t *testing.T) {
 	}
 }
 func startRandomHost(p int) AkhHost {
-	private, _, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	private := blockchain.NewP
 	privateBytes, _ := crypto.MarshalPrivateKey(private)
 	return StartHost(p, privateBytes)
 }

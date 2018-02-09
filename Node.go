@@ -126,7 +126,7 @@ func (node *AkhNode) ReceiveVote(v Vote) {
 		return
 	}
 
-	err = node.poll.SubmitVoteFor(v.Candidate)
+	err = node.poll.SubmitVote(v)
 	if err != nil {
 		log.Errorf("Failed to submit vote: %s\n", err)
 	}
@@ -144,7 +144,7 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 
 	node = &AkhNode{
 		transactionsPool: transactionPool,
-		poll:             consensus.NewPoll(3),
+		poll:             consensus.NewPoll(3, 1, 3*time.Second),
 		Genesis:          genesis,
 		Head:             genesis,
 		Host:             host,

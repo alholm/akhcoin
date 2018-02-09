@@ -65,6 +65,11 @@ type TxWrapper struct {
 	Prev, Next *Transaction
 }
 
+func NewKeys() (crypto.PrivKey, crypto.PubKey, error) {
+	private, public, err := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	return private, public, err
+}
+
 func CreateGenesis() *Block {
 	return &Block{BlockData{ParentHash: "", Hash: HashStr("genesis")}, nil, nil}
 }
