@@ -7,28 +7,32 @@ import (
 	"sync"
 )
 
+var winners, losers map[string]int
+
 func init() {
 	logging.SetLogLevel("consensus", "DEBUG")
+	winners = map[string]int{"winner": 20, "second": 19, "thirdd": 17, "forthh": 11, "fifthh": 10}
+	losers = map[string]int{"loser1": 1, "loser2": 9, "loser3": 5}
+
 }
 
-func TestPoll_IsElected(t *testing.T) {
+func doElection() *Poll {
 	poll := NewPoll(5)
-
-	winners := map[string]int{"winner": 20, "second": 19, "thirdd": 17, "forthh": 11, "fifthh": 10}
-	losers := map[string]int{"loser1": 1, "loser2": 9, "loser3": 5}
-
 	var wg sync.WaitGroup
 	wg.Add(8)
-
 	for candidate, votes := range winners {
 		go poll.voteForNTimes(candidate, votes, &wg)
 	}
 	for candidate, votes := range losers {
 		go poll.voteForNTimes(candidate, votes, &wg)
 	}
-
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond)
+	return poll
+}
+
+func TestPoll_IsElected(t *testing.T) {
+	poll := doElection()
 
 	for candidate := range winners {
 		if !poll.IsElected(candidate) {

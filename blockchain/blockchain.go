@@ -97,9 +97,13 @@ func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction) 
 }
 
 //GetTimeStamp returns current timestamp
-//TODO implement network time adjustment
 func GetTimeStamp() int64 {
-	return time.Now().UnixNano()
+	return CurrentTime().UnixNano()
+}
+
+//TODO implement network time adjustment
+func CurrentTime() time.Time {
+	return time.Now()
 }
 
 func (b *Block) lastTransaction() (t *Transaction) {
@@ -134,7 +138,6 @@ func HashStr(str string) string {
 func Hash(bytes []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(bytes))
 }
-
 
 func verify(s Signable) (result bool, err error) {
 

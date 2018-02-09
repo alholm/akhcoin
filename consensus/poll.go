@@ -40,7 +40,7 @@ func (p *Poll) startListening() {
 
 			p.insert(Candidate{candidate, votesN})
 
-			log.Debugf("-> %s = %d ; %v", candidate, votesN, p.top)
+			//log.Debugf("-> %s = %d ; %v", candidate, votesN, p.top)
 
 		case <-p.newRoundChan:
 			//TODO consider clearing by range deletion to decrease GC load
@@ -64,7 +64,7 @@ func (p *Poll) insert(newCandidate Candidate) {
 		return
 	}
 
-	insertedPos := getPosition(p.top, newCandidate)
+	insertedPos := getPosition(p.top, newCandidate.id)
 	if insertedPos != -1 {
 		p.top[insertedPos] = newCandidate
 	} else if len(p.top) < p.maxElected {
@@ -84,10 +84,10 @@ func (p *Poll) insert(newCandidate Candidate) {
 	}
 }
 
-func getPosition(top []Candidate, candidate Candidate) int {
+func getPosition(top []Candidate, candidateId string) int {
 	position := -1
 	for i := 0; i < len(top); i++ {
-		if top[i].id == candidate.id {
+		if top[i].id == candidateId {
 			position = i
 			break
 		}
@@ -106,6 +106,13 @@ func (p *Poll) IsElected(candidate string) (result bool) {
 	return
 }
 
+func (p *Poll) GetPosition(candidate string) int {
+	if len(p.top) == 0 || !p.IsElected(candidate) {
+		return -1
+	}
+	return getPosition(p.top, candidate)
+}
+
 func (p *Poll) SubmitVoteFor(candidate string) (err error) {
 	//TODO
 	//if no active round err = ...; return
@@ -115,4 +122,8 @@ func (p *Poll) SubmitVoteFor(candidate string) (err error) {
 
 func (p *Poll) StartNewRound() {
 	p.newRoundChan <- struct{}{}
+}
+
+func (p *Poll) GetMaxElected() int{
+	return p.maxElected
 }

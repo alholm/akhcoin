@@ -4,7 +4,6 @@ import (
 	. "akhcoin/blockchain"
 	"akhcoin/p2p"
 	"bytes"
-	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -55,11 +54,6 @@ func (node *AkhNode) Vote(peerIdStr string) {
 
 func (node *AkhNode) Produce() (block *Block, err error) {
 	pool := node.transactionsPool
-	if len(pool) == 0 {
-		err = fmt.Errorf("no transactions in pool, no block needed")
-		// log.Info(err)
-		return
-	}
 	privateKey := node.Host.Peerstore().PrivKey(node.Host.ID())
 	block = NewBlock(privateKey, node.Head, pool)
 	node.Head = block
@@ -150,7 +144,7 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 
 	node = &AkhNode{
 		transactionsPool: transactionPool,
-		poll:             consensus.NewPoll(1),
+		poll:             consensus.NewPoll(3),
 		Genesis:          genesis,
 		Head:             genesis,
 		Host:             host,
@@ -171,30 +165,23 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 	//host.DumpHostInfo()
 	host.DiscoverPeers()
 
+	ttpChan := consensus.StartProduction(node.poll, node.Host.ID().Pretty(), 10)
+
 	go func() {
-
-		ticker := time.NewTicker(3 * time.Second)
-
-		for range ticker.C {
-			if node.isElected() {
-				block, err := node.Produce()
-				if err != nil {
-					// log.Error(err)
-					continue
-				}
-				err = node.Announce(block)
-				if err != nil {
-					log.Error(err)
-				}
+		for range ttpChan {
+			block, err := node.Produce()
+			if err != nil {
+				// log.Error(err)
+				continue
+			}
+			err = node.Announce(block)
+			if err != nil {
+				log.Error(err)
 			}
 		}
 	}()
 
 	return
-}
-
-func (node *AkhNode) isElected() bool {
-	return node.poll.IsElected(node.Host.ID().Pretty())
 }
 
 func (node *AkhNode) initialBlockDownload() {
