@@ -71,7 +71,8 @@ func NewKeys() (crypto.PrivKey, crypto.PubKey, error) {
 }
 
 func CreateGenesis() *Block {
-	return &Block{BlockData{ParentHash: "", Hash: HashStr("genesis")}, nil, nil}
+	return &Block{Parent: nil, Next: nil, BlockData: BlockData{ParentHash: "", Hash: HashStr("genesis"),
+		TimeStamp: time.Date(2018, 02, 13, 06, 00, 00, 00, time.UTC).UnixNano()}}
 }
 
 func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction) *Block {
@@ -108,7 +109,7 @@ func GetTimeStamp() int64 {
 
 //TODO implement network time adjustment
 func CurrentTime() time.Time {
-	return time.Now()
+	return time.Now().UTC()
 }
 
 func (b *Block) lastTransaction() (t *Transaction) {
@@ -162,7 +163,7 @@ func verify(s Signable) (result bool, err error) {
 	return
 }
 
-func Validate(block *Block, chainHead *Block) (valid bool, err error) {
+func Verify(block *Block, chainHead *Block) (valid bool, err error) {
 	valid, err = verify(block)
 	if !valid {
 		err = fmt.Errorf("invalid block: %s: %s", block.Hash, err)

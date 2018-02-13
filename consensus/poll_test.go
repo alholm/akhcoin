@@ -1,13 +1,13 @@
 package consensus
 
 import (
+	"akhcoin/blockchain"
+	logging "github.com/ipfs/go-log"
+	"github.com/libp2p/go-libp2p-crypto"
+	"github.com/libp2p/go-libp2p-peer"
+	"sync"
 	"testing"
 	"time"
-	logging "github.com/ipfs/go-log"
-	"sync"
-	"akhcoin/blockchain"
-	"github.com/libp2p/go-libp2p-peer"
-	"github.com/libp2p/go-libp2p-crypto"
 )
 
 var winners, losers map[string]int
@@ -20,7 +20,7 @@ func init() {
 }
 
 func doElection() *Poll {
-	poll := NewPoll(5, 1, 3*time.Second)
+	poll := NewPoll(5, 1, 3*time.Second, getTestStartTime())
 	var wg sync.WaitGroup
 	wg.Add(8)
 	for candidate, votes := range winners {
@@ -69,7 +69,7 @@ func (p *Poll) voteForNTimes(candidate string, n int, wg *sync.WaitGroup) {
 }
 
 func TestPoll_ProcessVote(t *testing.T) {
-	poll := NewPoll(2, 2, 1*time.Second)
+	poll := NewPoll(2, 2, 1*time.Second, 0)
 	privates := make([]crypto.PrivKey, 3)
 	peerIds := make([]peer.ID, 3)
 
@@ -117,5 +117,9 @@ func TestPoll_ProcessVote(t *testing.T) {
 	if poll.votes[peerIds[2].Pretty()].votes != 0 {
 		t.Fatal("Vote changing didn't reflect first voted candidate")
 	}
-
 }
+
+func getTestStartTime() int64 {
+	return time.Now().UTC().UnixNano() - int64(42742*time.Millisecond)
+}
+

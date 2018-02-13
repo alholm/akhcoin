@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"fmt"
+	"testing"
 	"time"
 )
 
@@ -14,19 +15,19 @@ func ExampleStartProduction() {
 	for candidate := range losers {
 		startProduction(poll, candidate)
 	}
-	time.Sleep(10500 * time.Millisecond)
-	// Output:
-	//winner
-	//second
-	//thirdd
-	//forthh
-	//fifthh
-	//winner
-	//second
-	//thirdd
-	//forthh
-	//fifthh
 
+	time.Sleep(10100 * time.Millisecond)
+	// Output:
+	//forthh
+	//fifthh
+	//winner
+	//second
+	//thirdd
+	//forthh
+	//fifthh
+	//winner
+	//second
+	//thirdd
 }
 
 func startProduction(poll *Poll, candidate string) {
@@ -36,4 +37,21 @@ func startProduction(poll *Poll, candidate string) {
 			fmt.Println(id)
 		}
 	}(ttpChan, candidate)
+}
+
+func TestPoll_GetCurrentSlot(t *testing.T) {
+	startTime := getTestStartTime()
+	poll := NewPoll(5, 1, 0, startTime)
+	poll.period = int64(1 * time.Second)
+
+	expected := []int{2, 3, 4, 4, 0, 1, 1, 2, 3}
+
+	for i := 0; i < 9; i++ {
+		_, slot := poll.getSlotAt(time.Now().UTC().UnixNano())
+		if slot != expected[i] {
+			t.Errorf("Got %d slot, expected: %d", slot, expected[i])
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+
 }

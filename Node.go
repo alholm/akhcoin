@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"akhcoin/consensus"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
-	"akhcoin/consensus"
 )
 
 type Node interface {
@@ -92,13 +92,22 @@ func (node *AkhNode) addTransactionToPool(t Transaction) {
 //TODO think of reaction to invalid block
 func (node *AkhNode) Receive(bd BlockData) {
 	block := &Block{BlockData: bd, Parent: node.Head}
-	verified, err := Validate(block, node.Head)
-	log.Debugf("Block received: %s, VERIFIED=%t\n", bd.Hash, verified)
+	verified, err := Verify(block, node.Head)
 
-	if err != nil {
+	log.Debugf("Block received: %s, VERIFIED=%v\n", bd.Hash, verified)
+	if !verified {
 		log.Error(err)
 		return
 	}
+
+	valid, err := node.poll.IsValid(block, GetTimeStamp())
+
+	log.Debugf("Block produced correctly: %v\n", valid)
+	if !valid {
+		log.Error(err)
+		return
+	}
+
 	node.Attach(block)
 
 	node.Lock()
@@ -108,6 +117,7 @@ func (node *AkhNode) Receive(bd BlockData) {
 			if bytes.Equal(y.Sign, t.T.Sign) {
 				//delete
 				node.transactionsPool = append(node.transactionsPool[:j], node.transactionsPool[j+1:]...)
+				break
 			}
 		}
 	}
@@ -144,7 +154,7 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 
 	node = &AkhNode{
 		transactionsPool: transactionPool,
-		poll:             consensus.NewPoll(3, 1, 3*time.Second),
+		poll:             consensus.NewPoll(3, 1, 20*time.Second, genesis.TimeStamp),
 		Genesis:          genesis,
 		Head:             genesis,
 		Host:             host,
@@ -193,7 +203,7 @@ func (node *AkhNode) initialBlockDownload() {
 			continue
 		}
 		for block != nil {
-			valid, err := Validate(block, node.Head)
+			valid, err := Verify(block, node.Head)
 			if !valid {
 				log.Warning(err)
 				//TODO

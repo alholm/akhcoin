@@ -1,16 +1,16 @@
 package consensus
 
 import (
+	"akhcoin/blockchain"
 	logging "github.com/ipfs/go-log"
 	"sort"
-	"akhcoin/blockchain"
 	"time"
 )
 
 var log = logging.Logger("consensus")
 
 type Poll struct {
-	votesChan chan blockchain.Vote
+	votesChan      chan blockchain.Vote
 	candidatesChan chan struct {
 		id    string
 		votes int
@@ -21,6 +21,8 @@ type Poll struct {
 	maxDelegates int
 	maxVotes     int
 	freezePeriod time.Duration
+	genesisStart int64
+	period       int64
 }
 
 type Candidate struct {
@@ -37,7 +39,7 @@ type VoterInfo struct {
 //Creates new structure that counts incoming votes and maintains list of maxDelegates top voted candidates.
 //maxVotes is number of candidates one is allowed to vote for.
 //freezePeriod is time required to elapse before voter can vote again
-func NewPoll(maxDelegates int, maxVotes int, freezePeriod time.Duration) *Poll {
+func NewPoll(maxDelegates int, maxVotes int, freezePeriod time.Duration, genesisStart int64) *Poll {
 	votes := make(map[string]VoterInfo)
 	top := make([]Candidate, 0, maxDelegates)
 
@@ -50,7 +52,7 @@ func NewPoll(maxDelegates int, maxVotes int, freezePeriod time.Duration) *Poll {
 		make(chan blockchain.Vote),
 		candidatesChan,
 		make(chan struct{}),
-		votes, top, maxDelegates, maxVotes, freezePeriod}
+		votes, top, maxDelegates, maxVotes, freezePeriod, genesisStart, 3}
 
 	go poll.startListening()
 
@@ -107,7 +109,7 @@ func (p *Poll) startListening() {
 			votesN := candidateInfo.votes
 			p.votes[candidate.id] = candidateInfo
 
-			p.insert(Candidate{candidate.id, votesN})
+			p.updateTop(Candidate{candidate.id, votesN})
 
 			//log.Debugf("-> %s = %d ; %v", candidate, votesN, p.top)
 
@@ -127,7 +129,7 @@ func (p *Poll) minVotes() int {
 	return 0
 }
 
-func (p *Poll) insert(newCandidate Candidate) {
+func (p *Poll) updateTop(newCandidate Candidate) {
 
 	if len(p.top) == p.maxDelegates && newCandidate.votes <= p.top[p.maxDelegates-1].votes {
 		return

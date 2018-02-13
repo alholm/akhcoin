@@ -1,13 +1,13 @@
 package main
 
 import (
-	"testing"
-	"akhcoin/p2p"
-	"os"
-	"time"
-	"github.com/libp2p/go-libp2p-crypto"
-	logging "github.com/ipfs/go-log"
 	"akhcoin/blockchain"
+	"akhcoin/p2p"
+	logging "github.com/ipfs/go-log"
+	"github.com/libp2p/go-libp2p-crypto"
+	"os"
+	"testing"
+	"time"
 )
 
 func init() {
