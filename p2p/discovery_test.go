@@ -1,12 +1,12 @@
 package p2p
 
 import (
-	"testing"
-	"os"
-	"github.com/libp2p/go-libp2p-peerstore"
-	"github.com/libp2p/go-libp2p-crypto"
-	logging "github.com/ipfs/go-log"
 	"akhcoin/blockchain"
+	logging "github.com/ipfs/go-log"
+	"github.com/libp2p/go-libp2p-crypto"
+	"github.com/libp2p/go-libp2p-peerstore"
+	"os"
+	"testing"
 )
 
 func init() {
@@ -50,7 +50,7 @@ func TestAkhHost_DiscoverPeers(t *testing.T) {
 	}
 }
 func startRandomHost(p int) AkhHost {
-	private := blockchain.NewP
+	private, _, _ := blockchain.NewKeys()
 	privateBytes, _ := crypto.MarshalPrivateKey(private)
-	return StartHost(p, privateBytes)
+	return StartHost(p, privateBytes, false)
 }

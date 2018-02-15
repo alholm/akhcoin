@@ -22,6 +22,7 @@ const (
 
 type GetBlockMessage struct {
 	Message
+	blockHash string
 }
 
 type AckMessage struct {
@@ -29,7 +30,7 @@ type AckMessage struct {
 }
 
 type BlockStreamHandler struct {
-	Genesis *blockchain.Block
+	Head *blockchain.Block
 }
 
 func (brp *BlockStreamHandler) protocol() protocol.ID {
@@ -44,24 +45,28 @@ func (brp *BlockStreamHandler) handle(ws *WrappedStream) {
 		return
 	}
 
-	nextBlock := brp.Genesis.Next
+	nextBlock := brp.Head
 	for nextBlock != nil {
-		log.Debugf("%s: sending block %s\n", ws.stream.Conn().LocalPeer().Pretty(), nextBlock.Hash)
-		err = sendMessage(nextBlock.BlockData, ws)
-		if err != nil {
-			log.Warningf("%s: Failed to transmit a block: %s\n", ws.stream.Conn().RemotePeer().Pretty(), err)
-			return
+
+		if nextBlock.Hash == msg.blockHash {
+			log.Debugf("%s: sending block %s\n", ws.stream.Conn().LocalPeer().Pretty(), nextBlock.Hash)
+			err = sendMessage(nextBlock.BlockData, ws)
+			if err != nil {
+				log.Warningf("%s: Failed to transmit a block: %s\n", ws.stream.Conn().RemotePeer().Pretty(), err)
+				break
+			}
 		}
 
-		var ackMsg AckMessage
-		err := receiveMessage(&ackMsg, ws)
-		if err != nil {
-			log.Warningf("%s: Failed get confirmation on block delivery: %s\n", ws.stream.Conn().RemotePeer().Pretty(), err)
-			return
-		}
+		//var ackMsg AckMessage
+		//err := receiveMessage(&ackMsg, ws)
+		//if err != nil {
+		//	log.Warningf("%s: Failed get confirmation on block delivery: %s\n", ws.stream.Conn().RemotePeer().Pretty(), err)
+		//	return
+		//}
 
-		nextBlock = nextBlock.Next
+		nextBlock = nextBlock.Parent
 	}
+
 }
 
 type TransactionStreamHandler struct {
@@ -121,40 +126,25 @@ func (*VoteStreamHandler) protocol() protocol.ID {
 	return VoteAnnounceProto
 }
 
-func (h *AkhHost) GetBlock(peerID peer.ID, someFunc func(o interface{})) (*blockchain.Block, error) {
-	msg := &GetBlockMessage{}
+func (h *AkhHost) GetBlock(peerID peer.ID, blockHash string) (bd *blockchain.BlockData, err error) {
+	msg := &GetBlockMessage{blockHash: blockHash}
 	ws, err := h.SendMessage(msg, peerID, BlockProto)
 	if err != nil {
-		return nil, err
+		return
 	}
-	block := &blockchain.Block{}
-	firstBlock := block
-	for {
 
-		var blockData blockchain.BlockData
-		err := receiveMessage(&blockData, ws)
-		if err != nil {
-			if err != io.EOF {
-				log.Warningf("%s: %s stream to %s processing ended: %s", h.ID(), BlockProto, peerID.Pretty(), err)
-			}
-			break
+	err = receiveMessage(bd, ws)
+	if err != nil {
+		if err != io.EOF {
+			log.Warningf("%s: %s stream to %s processing ended: %s", h.ID(), BlockProto, peerID.Pretty(), err)
 		}
-		log.Debugf("%s: BlockData received from %s: %s", h.ID(), ws.stream.Conn().RemotePeer().Pretty(), blockData.Hash)
-		block.BlockData = blockData
-		nextBlock := &blockchain.Block{Parent: block}
-		block.Next = nextBlock
-		block = nextBlock
-
-		someFunc(blockData)
-
-		ackMsg := &AckMessage{}
-		sendMessage(ackMsg, ws)
+		return
 	}
+	log.Debugf("%s: BlockData received from %s: %s", h.ID(), ws.stream.Conn().RemotePeer().Pretty(), bd.Hash)
+	//ackMsg := &AckMessage{}
+	//sendMessage(ackMsg, ws)
 
-	//TODO may be nil
-	block.Parent.Next = nil
-
-	return firstBlock, nil
+	return
 }
 
 func (h *AkhHost) PublishTransaction(t *blockchain.Transaction) {

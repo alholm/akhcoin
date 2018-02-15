@@ -122,4 +122,3 @@ func TestPoll_ProcessVote(t *testing.T) {
 func getTestStartTime() int64 {
 	return time.Now().UTC().UnixNano() - int64(42742*time.Millisecond)
 }
-

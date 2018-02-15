@@ -163,16 +163,11 @@ func verify(s Signable) (result bool, err error) {
 	return
 }
 
-func Verify(block *Block, chainHead *Block) (valid bool, err error) {
+//Block cryptographic verification
+func Verify(block *BlockData) (valid bool, err error) {
 	valid, err = verify(block)
 	if !valid {
 		err = fmt.Errorf("invalid block: %s: %s", block.Hash, err)
-		return
-	}
-
-	if block.ParentHash != chainHead.Hash {
-		err = fmt.Errorf("wrong block sequance: block: %s parent hash = %s, chain head hash = %s",
-			block.Hash, block.ParentHash, chainHead.Hash)
 		return
 	}
 

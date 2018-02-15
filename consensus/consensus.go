@@ -49,12 +49,12 @@ func (p *Poll) getSlotAt(timeStamp int64) (requiredTS int64, slot int) {
 	return
 }
 
-func (p *Poll) IsValid(block *blockchain.Block, receivedAt int64) (valid bool, err error) {
+//Block validation from DPoS perspective: was block produced by right candidate at the right time?
+func (p *Poll) IsValid(block *blockchain.BlockData, receivedAt int64) (valid bool, err error) {
 	requiredTS, slot := p.getSlotAt(receivedAt)
 
 	position := p.GetPosition(block.Signer)
 	if position != slot {
-		//TODO punishment
 		return false, fmt.Errorf("not in required slot: %d, producer position = %d", slot, position)
 	}
 	diff := requiredTS - block.TimeStamp

@@ -25,6 +25,10 @@ type Poll struct {
 	period       int64
 }
 
+func (p *Poll) Period() int64 {
+	return p.period
+}
+
 type Candidate struct {
 	id    string
 	votes int

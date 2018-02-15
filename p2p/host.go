@@ -69,7 +69,7 @@ func WrapStream(s inet.Stream) *WrappedStream {
 	}
 }
 
-func StartHost(port int, privateKey []byte) AkhHost {
+func StartHost(port int, privateKey []byte, withDiscovery bool) AkhHost {
 	private, err := crypto.UnmarshalPrivateKey(privateKey)
 	handleStartingHostErr(err)
 	public := private.GetPublic()
@@ -88,11 +88,14 @@ func StartHost(port int, privateKey []byte) AkhHost {
 	basicHost := bhost.New(n)
 	akhHost := AkhHost{*basicHost}
 
-	akhHost.startMdnsDiscovery()
+	if withDiscovery {
+		akhHost.startMdnsDiscovery()
 
-	//TODO temp, think where it belongs
-	drp := &DiscoverStreamHandler{&ps}
-	akhHost.AddStreamHandler(drp)
+		//TODO temp, think where it belongs
+		drp := &DiscoverStreamHandler{&ps}
+		akhHost.AddStreamHandler(drp)
+	}
+
 	log.Infof("Host %s %s on %v started\n", akhHost.ID().Pretty(), akhHost.ID(), []ma.Multiaddr{listen})
 
 	return akhHost

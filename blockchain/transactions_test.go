@@ -1,8 +1,8 @@
 package blockchain
 
 import (
-	"github.com/libp2p/go-libp2p-peer"
 	"fmt"
+	"github.com/libp2p/go-libp2p-peer"
 )
 
 func ExampleTransaction() {

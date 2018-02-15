@@ -1,11 +1,11 @@
 package blockchain
 
 import (
-	"github.com/libp2p/go-libp2p-peer"
-	"github.com/libp2p/go-libp2p-crypto"
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/libp2p/go-libp2p-crypto"
+	"github.com/libp2p/go-libp2p-peer"
 )
 
 type Signable interface {
