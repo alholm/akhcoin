@@ -31,20 +31,6 @@ type Message interface {
 	MsgText() string
 }
 
-type MyMessage struct {
-	Msg    string
-	Index  int
-	HangUp bool
-}
-
-func (m *MyMessage) String() string {
-	return m.Msg
-}
-
-func (m *MyMessage) MsgText() string {
-	return m.Msg
-}
-
 type WrappedStream struct {
 	stream inet.Stream
 	enc    multicodec.Encoder

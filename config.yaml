@@ -1,0 +1,6 @@
+poll:
+  maxDelegates: 3
+  maxVotes: 1
+  freezePeriod: 20 #sec
+  period: 10000000 #nanosec
+  epsilon: 1000

@@ -29,6 +29,7 @@ func readHostsInfo() (peers []ps.PeerInfo, err error) {
 		return
 	}
 	defer file.Close()
+	//fmt.Sprintf("%s:%s\n", h.Addrs()[0], h.ID().Pretty())
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -201,20 +202,6 @@ func (h *AkhHost) AddPeerManually(remotePeerAddr string, remotePeerID string) (e
 	if err == nil {
 		h.populatePeerStore([]ps.PeerInfo{peerInfo})
 	}
-	return
-}
-
-func (h *AkhHost) DumpHostInfo() (err error) {
-	info := fmt.Sprintf("%s:%s\n", h.Addrs()[0], h.ID().Pretty())
-	f, err := os.OpenFile(HostsInfoPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Errorf("Error while dumping host info to local registry: %s\n", err)
-		return
-	}
-
-	defer f.Close()
-
-	_, err = f.WriteString(info)
 	return
 }
 

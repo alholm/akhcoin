@@ -3,12 +3,14 @@ package consensus
 import (
 	"akhcoin/blockchain"
 	"fmt"
+	"github.com/spf13/viper"
 	"time"
 )
 
+var Epsilon = viper.GetInt64("poll.epsilon")
+
 //period - time between blocks production in seconds, ttp - time to produce ticker
-func StartProduction(poll *Poll, id string, period int) (ttpChan chan struct{}) {
-	poll.period = int64(period) * int64(time.Second)
+func StartProduction(poll *Poll, id string) (ttpChan chan struct{}) {
 	ttpChan = make(chan struct{})
 
 	go func(ttpChan chan struct{}) {
@@ -61,7 +63,7 @@ func (p *Poll) IsValid(block *blockchain.BlockData, receivedAt int64) (valid boo
 	if diff < 0 {
 		diff = -diff
 	}
-	valid = diff < int64(time.Second)
+	valid = diff < Epsilon
 	if !valid {
 		err = fmt.Errorf("incorrect timestamp: %d. Required: %d ± 1 second", block.TimeStamp, requiredTS)
 	}

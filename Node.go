@@ -12,7 +12,17 @@ import (
 	"fmt"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
+	"github.com/spf13/viper"
 )
+
+func init() {
+	viper.SetConfigName("config")
+	viper.AddConfigPath(".")
+	err := viper.ReadInConfig()
+	if err != nil { // Handle errors reading the config file
+		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+	}
+}
 
 type Node interface {
 	Vote(sign string, addr string)
@@ -41,13 +51,14 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 
 	node = &AkhNode{
 		transactionsPool: transactionPool,
-		poll:             consensus.NewPoll(3, 1, 20*time.Second, genesis.TimeStamp),
-		Genesis:          genesis,
-		Head:             genesis,
-		Host:             host,
+		poll: consensus.NewPoll(viper.GetInt("poll.MaxDelegates"), viper.GetInt("poll.MaxVotes"),
+			viper.GetDuration("poll.freezePeriod")*time.Second, genesis.TimeStamp),
+		Genesis: genesis,
+		Head:    genesis,
+		Host:    host,
 	}
 
-	brp := &p2p.BlockStreamHandler{Head: node.Head}
+	brp := &p2p.BlockStreamHandler{Head: &node.Head}
 	host.AddStreamHandler(brp)
 
 	trp := &p2p.TransactionStreamHandler{ProcessResult: node.ReceiveTransaction}
@@ -59,10 +70,9 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 	vrp := &p2p.VoteStreamHandler{ProcessResult: node.ReceiveVote}
 	host.AddStreamHandler(vrp)
 
-	//host.DumpHostInfo()
 	host.DiscoverPeers()
 
-	ttpChan := consensus.StartProduction(node.poll, node.Host.ID().Pretty(), 10)
+	ttpChan := consensus.StartProduction(node.poll, node.Host.ID().Pretty())
 
 	go func() {
 		for range ttpChan {
@@ -101,7 +111,7 @@ func (node *AkhNode) addTransactionToPool(t Transaction) {
 
 //TODO think of reaction to invalid block
 //TODO retransmit valid block
-func (node *AkhNode) Receive(bd BlockData) {
+func (node *AkhNode) Receive(bd BlockData, peerId peer.ID) {
 	if bd.Hash == node.Head.Hash {
 		return
 	}
@@ -124,11 +134,11 @@ func (node *AkhNode) Receive(bd BlockData) {
 	}
 
 	if bd.ParentHash == node.Head.Hash {
-		node.Attach(bd)
+		node.attach(bd)
 		node.adjustPool(bd)
 	} else {
 		//switch to the longest chain if there is one, decline otherwise
-		node.switchToLongest(bd)
+		node.switchToLongest(bd, peerId)
 		//TODO
 		//node.adjustPool(new fork)
 	}
@@ -136,7 +146,7 @@ func (node *AkhNode) Receive(bd BlockData) {
 
 //TODO is it safe not to validate whether block was produced by elected at that time delegate?
 //TODO use blockData pointers to avoid excess stack usage
-func (node *AkhNode) switchToLongest(bd BlockData) {
+func (node *AkhNode) switchToLongest(bd BlockData, peerId peer.ID) {
 	myForkLen := 0
 	hisForkLen := 0
 
@@ -147,7 +157,7 @@ func (node *AkhNode) switchToLongest(bd BlockData) {
 
 		for hisBlock.TimeStamp > myBlock.TimeStamp {
 			var err error
-			hisBlock, err = node.getParent(hisBlock)
+			hisBlock, err = node.getParent(hisBlock, peerId)
 			if err != nil {
 				log.Error(err)
 				return
@@ -167,7 +177,7 @@ func (node *AkhNode) switchToLongest(bd BlockData) {
 		}
 
 		//myBlock and hisBlock hashes can not be different at this point, as all blocks were verified
-		//timestamps of the block fork started from are exactly the same as blocks are identical
+		//timestamps of the block fork started from are _exactly_ the same as blocks are identical
 		if hisBlock.TimeStamp == myBlock.TimeStamp {
 			break
 		}
@@ -177,25 +187,25 @@ func (node *AkhNode) switchToLongest(bd BlockData) {
 	}
 
 	node.Head = myBlock
-	for hisBlock != nil {
-		node.Attach(hisBlock.BlockData)
+	for hisBlock.Next != nil {
+		node.attach(hisBlock.Next.BlockData)
 		hisBlock = hisBlock.Next
 	}
 }
 
-func (node *AkhNode) getParent(block *Block) (parent *Block, err error) {
-	bd, err := node.Host.GetBlock(node.getRandomPeer(), block.ParentHash)
+func (node *AkhNode) getParent(block *Block, peerId peer.ID) (parent *Block, err error) {
+	bd, err := node.Host.GetBlock(peerId, block.ParentHash)
 	if err != nil {
 		return
 	}
-	parent = &Block{BlockData: *bd, Next: block}
+	parent = &Block{BlockData: bd, Next: block}
 	block.Parent = parent
 	return
 }
 
 //TODO timestamps safe comparison
 func (node *AkhNode) isValidParent(block *Block) (valid bool, err error) {
-	if block.Next.ParentHash != block.Hash || block.Next.TimeStamp-block.TimeStamp < node.poll.Period() /*±1000*/ {
+	if block.Next.ParentHash != block.Hash || block.Next.TimeStamp-block.TimeStamp < node.poll.Period()-consensus.Epsilon {
 		err = fmt.Errorf("invalid fork")
 		return
 	}
@@ -203,7 +213,7 @@ func (node *AkhNode) isValidParent(block *Block) (valid bool, err error) {
 	return
 }
 
-func (node *AkhNode) Attach(bd BlockData) {
+func (node *AkhNode) attach(bd BlockData) {
 	block := &Block{BlockData: bd, Parent: node.Head}
 	node.Head.Next = block
 	node.Head = block
@@ -295,7 +305,7 @@ func (node *AkhNode) initialBlockDownload() {
 		//		log.Warning(err)
 		//		//TODO
 		//	}
-		//	node.Attach(block)
+		//	node.attach(block)
 		//	block = block.Next
 		//}
 	}

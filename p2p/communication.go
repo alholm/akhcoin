@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	"fmt"
 	"github.com/libp2p/go-libp2p-peer"
 	"github.com/libp2p/go-libp2p-protocol"
 )
@@ -22,15 +23,11 @@ const (
 
 type GetBlockMessage struct {
 	Message
-	blockHash string
-}
-
-type AckMessage struct {
-	Message
+	BlockHash string
 }
 
 type BlockStreamHandler struct {
-	Head *blockchain.Block
+	Head **blockchain.Block
 }
 
 func (brp *BlockStreamHandler) protocol() protocol.ID {
@@ -45,10 +42,10 @@ func (brp *BlockStreamHandler) handle(ws *WrappedStream) {
 		return
 	}
 
-	nextBlock := brp.Head
+	nextBlock := *brp.Head
 	for nextBlock != nil {
 
-		if nextBlock.Hash == msg.blockHash {
+		if nextBlock.Hash == msg.BlockHash {
 			log.Debugf("%s: sending block %s\n", ws.stream.Conn().LocalPeer().Pretty(), nextBlock.Hash)
 			err = sendMessage(nextBlock.BlockData, ws)
 			if err != nil {
@@ -56,13 +53,6 @@ func (brp *BlockStreamHandler) handle(ws *WrappedStream) {
 				break
 			}
 		}
-
-		//var ackMsg AckMessage
-		//err := receiveMessage(&ackMsg, ws)
-		//if err != nil {
-		//	log.Warningf("%s: Failed get confirmation on block delivery: %s\n", ws.stream.Conn().RemotePeer().Pretty(), err)
-		//	return
-		//}
 
 		nextBlock = nextBlock.Parent
 	}
@@ -89,7 +79,7 @@ func (trp *TransactionStreamHandler) handle(ws *WrappedStream) {
 }
 
 type AnnouncedBlockStreamHandler struct {
-	ProcessResult func(bd blockchain.BlockData)
+	ProcessResult func(bd blockchain.BlockData, peerId peer.ID)
 }
 
 func (abrp *AnnouncedBlockStreamHandler) handle(ws *WrappedStream) {
@@ -100,7 +90,7 @@ func (abrp *AnnouncedBlockStreamHandler) handle(ws *WrappedStream) {
 		return
 	}
 
-	abrp.ProcessResult(bd)
+	abrp.ProcessResult(bd, ws.stream.Conn().RemotePeer())
 }
 
 func (*AnnouncedBlockStreamHandler) protocol() protocol.ID {
@@ -126,23 +116,25 @@ func (*VoteStreamHandler) protocol() protocol.ID {
 	return VoteAnnounceProto
 }
 
-func (h *AkhHost) GetBlock(peerID peer.ID, blockHash string) (bd *blockchain.BlockData, err error) {
-	msg := &GetBlockMessage{blockHash: blockHash}
+func (h *AkhHost) GetBlock(peerID peer.ID, blockHash string) (bd blockchain.BlockData, err error) {
+	msg := &GetBlockMessage{BlockHash: blockHash}
 	ws, err := h.SendMessage(msg, peerID, BlockProto)
 	if err != nil {
 		return
 	}
 
-	err = receiveMessage(bd, ws)
+	err = receiveMessage(&bd, ws)
 	if err != nil {
 		if err != io.EOF {
 			log.Warningf("%s: %s stream to %s processing ended: %s", h.ID(), BlockProto, peerID.Pretty(), err)
+			err = fmt.Errorf("failed to receive block %s : %s", blockHash, err)
+		} else {
+			err = fmt.Errorf("block %s wasn't received", blockHash)
 		}
 		return
+
 	}
 	log.Debugf("%s: BlockData received from %s: %s", h.ID(), ws.stream.Conn().RemotePeer().Pretty(), bd.Hash)
-	//ackMsg := &AckMessage{}
-	//sendMessage(ackMsg, ws)
 
 	return
 }
@@ -174,12 +166,6 @@ func (h *AkhHost) publish(t interface{}, proto protocol.ID) {
 			ws := WrapStream(stream)
 
 			sendMessage(t, ws)
-			//var ackMsg AckMessage
-			//err := ws.dec.Decode(&ackMsg)
-			//if err != nil {
-			//	log.Println(err)
-			//	return
-			//}
 		}(peerID)
 	}
 	wg.Wait()

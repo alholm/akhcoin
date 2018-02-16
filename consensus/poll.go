@@ -3,11 +3,17 @@ package consensus
 import (
 	"akhcoin/blockchain"
 	logging "github.com/ipfs/go-log"
+	"github.com/spf13/viper"
 	"sort"
 	"time"
 )
 
 var log = logging.Logger("consensus")
+
+func init() {
+	viper.SetDefault("poll.period", int64(10*time.Second))
+	viper.SetDefault("poll.epsilon", 1000)
+}
 
 type Poll struct {
 	votesChan      chan blockchain.Vote
@@ -44,6 +50,7 @@ type VoterInfo struct {
 //maxVotes is number of candidates one is allowed to vote for.
 //freezePeriod is time required to elapse before voter can vote again
 func NewPoll(maxDelegates int, maxVotes int, freezePeriod time.Duration, genesisStart int64) *Poll {
+	log.Debugf("New Poll config: md = %d, mv = %d, fp = %v, p = %d", maxDelegates, maxVotes, freezePeriod, viper.GetInt64("poll.period"))
 	votes := make(map[string]VoterInfo)
 	top := make([]Candidate, 0, maxDelegates)
 
@@ -56,7 +63,8 @@ func NewPoll(maxDelegates int, maxVotes int, freezePeriod time.Duration, genesis
 		make(chan blockchain.Vote),
 		candidatesChan,
 		make(chan struct{}),
-		votes, top, maxDelegates, maxVotes, freezePeriod, genesisStart, 3}
+		votes, top, maxDelegates, maxVotes, freezePeriod,
+		genesisStart, viper.GetInt64("poll.period")}
 
 	go poll.startListening()
 

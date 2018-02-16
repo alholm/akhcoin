@@ -2,11 +2,13 @@ package consensus
 
 import (
 	"fmt"
+	"github.com/spf13/viper"
 	"testing"
 	"time"
 )
 
 func ExampleStartProduction() {
+	viper.Set("poll.period", int64(time.Second))
 	poll := doElection()
 
 	for candidate := range winners {
@@ -31,7 +33,7 @@ func ExampleStartProduction() {
 }
 
 func startProduction(poll *Poll, candidate string) {
-	ttpChan := StartProduction(poll, candidate, 1)
+	ttpChan := StartProduction(poll, candidate)
 	go func(ttpChan chan struct{}, id string) {
 		for range ttpChan {
 			fmt.Println(id)
