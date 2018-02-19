@@ -216,7 +216,13 @@ func (node *AkhNode) isValidParent(block *Block, forkTip BlockData) (valid bool,
 			return
 		}
 	}
-	valid, err = Verify(&block.BlockData)
+	valid, err = Verify(&(block.BlockData))
+	if !valid {
+		if block.BlockData.Hash == node.Genesis.Hash {
+			return true, nil
+		}
+	}
+
 	return
 }
 

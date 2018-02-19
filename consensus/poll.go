@@ -12,7 +12,7 @@ var log = logging.Logger("consensus")
 
 func init() {
 	viper.SetDefault("poll.period", int64(10*time.Second))
-	viper.SetDefault("poll.epsilon", 1000)
+	viper.SetDefault("poll.epsilon", int64(1*time.Second))
 }
 
 type Poll struct {

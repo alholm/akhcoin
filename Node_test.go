@@ -1,7 +1,11 @@
 package main
 
 import (
+	"akhcoin/blockchain"
+	"akhcoin/consensus"
+	"fmt"
 	logging "github.com/ipfs/go-log"
+	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/spf13/viper"
 	"testing"
 	"time"
@@ -10,12 +14,14 @@ import (
 func init() {
 	logging.SetLogLevel("consensus", "DEBUG")
 	logging.SetLogLevel("p2p", "DEBUG")
+
+	viper.Set("poll.maxDelegates", 3)
 }
 
 func TestAkhNode_switchToLongest(t *testing.T) {
 
 	viper.Set("poll.period", int64(50*time.Millisecond))
-	viper.Set("poll.epsilon", 100)
+	viper.Set("poll.epsilon", int64(1*time.Millisecond))
 	viper.Set("poll.maxDelegates", 3)
 
 	var nodes [3]*AkhNode
@@ -98,5 +104,85 @@ func TestAkhNode_switchToLongest(t *testing.T) {
 	if nodes[1].Head.Hash == forkEnd.Hash {
 		t.Error("switched to falsified fork when must not")
 	}
+}
 
+func TestInitialBlockDownload(t *testing.T) {
+	logging.SetLogLevel("main", "DEBUG")
+	logging.SetLogLevel("p2p", "DEBUG")
+	period := int64(500 * time.Millisecond)
+	viper.Set("poll.period", period)
+	viper.Set("poll.epsilon", int64(10*time.Millisecond))
+
+	var nodes [3]*AkhNode
+	for i := 0; i < 3; i++ {
+		nodes[i] = startRandomNode(10765 + i)
+	}
+	time.Sleep(100 * time.Millisecond) //waiting for mdns
+
+	nodes[1].testPay()
+	nodes[2].testPay()
+
+	time.Sleep(100 * time.Millisecond)
+
+	l := len(nodes[0].transactionsPool)
+	if l != 2 {
+		t.Errorf("%d transactions in pull, has to be 2", l)
+	}
+	//TODO has to receive own vote
+	vote1 := blockchain.NewVote(nodes[0].GetPrivate(), nodes[1].Host.ID())
+	nodes[0].Host.PublishVote(vote1)
+	nodes[0].poll.SubmitVote(*vote1)
+	fmt.Printf("%s voted for %s\n", vote1.Voter, vote1.Candidate)
+
+	vote2 := blockchain.NewVote(nodes[1].GetPrivate(), nodes[2].Host.ID())
+	nodes[1].Host.PublishVote(vote2)
+	nodes[1].poll.SubmitVote(*vote2)
+	fmt.Printf("%s voted for %s\n", vote2.Voter, vote2.Candidate)
+
+	vote3 := blockchain.NewVote(nodes[2].GetPrivate(), nodes[0].Host.ID())
+	nodes[2].Host.PublishVote(vote3)
+	nodes[2].poll.SubmitVote(*vote3)
+	fmt.Printf("%s voted for %s\n", vote3.Voter, vote1.Candidate)
+
+	time.Sleep(100 * time.Millisecond)
+	//for i := 0; i < 3; i++ {
+	//	for j := 0; j < 3; j++ {
+	//		fmt.Println(nodes[i].poll.GetPosition(nodes[j].Host.ID().Pretty()))
+	//	}
+	//}
+	time.Sleep(consensus.UntilNext(period))
+
+	time.Sleep(time.Duration(2 * period)) //3 blocks produced
+
+	newNode := startRandomNode(10765 + 3)
+	time.Sleep(100 * time.Millisecond)
+
+	newNode.poll.SubmitVote(*vote2)
+	newNode.poll.SubmitVote(*vote1)
+	newNode.poll.SubmitVote(*vote3)
+
+	time.Sleep(100 * time.Millisecond)
+	//for j := 0; j < 3; j++ {
+	//	fmt.Println(newNode.poll.GetPosition(nodes[j].Host.ID().Pretty()))
+	//}
+	time.Sleep(consensus.UntilNext(period)) //4th block produced
+	time.Sleep(100 * time.Millisecond)
+
+	for i := 0; i < 3; i++ {
+		if nodes[i].Head.Hash != newNode.Head.Hash {
+			t.Fail()
+			break
+		}
+	}
+
+	for i := 0; i < 3; i++ {
+		nodes[i].Host.Close()
+	}
+}
+
+func startRandomNode(p int) *AkhNode {
+	private, _, _ := blockchain.NewKeys()
+	privateBytes, _ := crypto.MarshalPrivateKey(private)
+	node := NewAkhNode(p, privateBytes)
+	return node
 }
