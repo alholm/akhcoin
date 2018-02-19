@@ -14,8 +14,9 @@ func init() {
 
 func TestAkhNode_switchToLongest(t *testing.T) {
 
-	viper.Set("poll.period", 50000)
+	viper.Set("poll.period", int64(50*time.Millisecond))
 	viper.Set("poll.epsilon", 100)
+	viper.Set("poll.maxDelegates", 3)
 
 	var nodes [3]*AkhNode
 
@@ -25,13 +26,15 @@ func TestAkhNode_switchToLongest(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	/* scenario 1: 3 producers, 1st forked
+	/* scenario 1: 3 producers, 1st forked. Everyone are honest
 
-	chain 0: [2] [0] [_] [_] [0]  S - has to switch
-	chain 1: [2] [_] [1] [2] [_] [1]
+	chain 0: [2] [0] [_] [_] [0] [V]
+	                          |   A - has to switch
+	        must not switch - V   |
+	chain 1: [2] [_] [1] [2] [X] [1]
 	chain 2: [2] [_] [1] [2] [_] [1]
 	*/
-	
+
 	//3
 	forkStart, _ := nodes[2].Produce()
 	nodes[0].attach(forkStart.BlockData)
@@ -52,15 +55,16 @@ func TestAkhNode_switchToLongest(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	//1
-	nodes[0].Produce()
+	b3, _ := nodes[0].Produce()
 	time.Sleep(50 * time.Millisecond)
+
+	//attempt to convince others to switch to minor fork
+	nodes[1].switchToLongest(b3.BlockData, nodes[0].Host.ID())
 
 	//2
 	forkEnd, _ := nodes[1].Produce()
 	//nodes[2].attach(forkEnd.BlockData)
 	nodes[0].switchToLongest(forkEnd.BlockData, nodes[1].Host.ID())
-
-	time.Sleep(100 * time.Millisecond)
 
 	f1 := nodes[0].Head
 	f2 := nodes[1].Head
@@ -72,6 +76,27 @@ func TestAkhNode_switchToLongest(t *testing.T) {
 		}
 		f1 = f1.Parent
 		f2 = f2.Parent
+	}
+
+	/* scenario 2 - fraud: 3rd delegate forged incorrect fork
+
+	chain 1: [2] [_] [1]   [X]
+						    A - must not accept
+			                |
+	chain 2: [2] [_] [2]   [2] or
+	         [2] [_] [2][2][2] (more frequently produced blocks)
+	This is the only way to misbehave, dishonest delegate can't forge falsified fork with blocks from other delegates
+	because its signatures will be wrong.
+	*/
+
+	//3 - in parallel with 2
+	nodes[2].Produce()
+	time.Sleep(50 * time.Millisecond)
+	forkEnd, _ = nodes[2].Produce()
+	nodes[1].switchToLongest(forkEnd.BlockData, nodes[2].Host.ID())
+
+	if nodes[1].Head.Hash == forkEnd.Hash {
+		t.Error("switched to falsified fork when must not")
 	}
 
 }

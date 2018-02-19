@@ -144,14 +144,13 @@ func (node *AkhNode) Receive(bd BlockData, peerId peer.ID) {
 	}
 }
 
-//TODO is it safe not to validate whether block was produced by elected at that time delegate?
-//TODO use blockData pointers to avoid excess stack usage
-func (node *AkhNode) switchToLongest(bd BlockData, peerId peer.ID) {
+//See Node_test for scenarios handled
+func (node *AkhNode) switchToLongest(forkTip BlockData, peerId peer.ID) {
 	myForkLen := 0
 	hisForkLen := 0
 
 	myBlock := node.Head
-	hisBlock := &Block{BlockData: bd}
+	hisBlock := &Block{BlockData: forkTip}
 
 	for {
 
@@ -162,7 +161,7 @@ func (node *AkhNode) switchToLongest(bd BlockData, peerId peer.ID) {
 				log.Error(err)
 				return
 			}
-			_, err = node.isValidParent(hisBlock)
+			_, err = node.isValidParent(hisBlock, forkTip)
 			if err != nil {
 				log.Error(err)
 				return
@@ -204,10 +203,18 @@ func (node *AkhNode) getParent(block *Block, peerId peer.ID) (parent *Block, err
 }
 
 //TODO timestamps safe comparison
-func (node *AkhNode) isValidParent(block *Block) (valid bool, err error) {
+func (node *AkhNode) isValidParent(block *Block, forkTip BlockData) (valid bool, err error) {
 	if block.Next.ParentHash != block.Hash || block.Next.TimeStamp-block.TimeStamp < node.poll.Period()-consensus.Epsilon {
-		err = fmt.Errorf("invalid fork")
+		err = fmt.Errorf("invalid parent in incoming fork, block: %s", block.Hash)
 		return
+	}
+
+	if block.Signer == forkTip.Signer {
+		roundDuration := node.poll.Period() * int64(node.poll.GetMaxElected())
+		if forkTip.TimeStamp-block.TimeStamp < roundDuration-consensus.Epsilon {
+			err = fmt.Errorf("potential fraud: fork received from %s with block produced not in order", block.Signer)
+			return
+		}
 	}
 	valid, err = Verify(&block.BlockData)
 	return
