@@ -145,26 +145,14 @@ func TestInitialBlockDownload(t *testing.T) {
 	fmt.Printf("%s voted for %s\n", vote3.Voter, vote1.Candidate)
 
 	time.Sleep(100 * time.Millisecond)
-	//for i := 0; i < 3; i++ {
-	//	for j := 0; j < 3; j++ {
-	//		fmt.Println(nodes[i].poll.GetPosition(nodes[j].Host.ID().Pretty()))
-	//	}
-	//}
+
 	time.Sleep(consensus.UntilNext(period))
 
 	time.Sleep(time.Duration(2 * period)) //3 blocks produced
 
 	newNode := startRandomNode(10765 + 3)
-	time.Sleep(100 * time.Millisecond)
-
-	newNode.poll.SubmitVote(*vote2)
-	newNode.poll.SubmitVote(*vote1)
-	newNode.poll.SubmitVote(*vote3)
 
 	time.Sleep(100 * time.Millisecond)
-	//for j := 0; j < 3; j++ {
-	//	fmt.Println(newNode.poll.GetPosition(nodes[j].Host.ID().Pretty()))
-	//}
 	time.Sleep(consensus.UntilNext(period)) //4th block produced
 	time.Sleep(100 * time.Millisecond)
 

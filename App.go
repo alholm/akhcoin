@@ -130,14 +130,6 @@ func main() {
 	})
 
 	shell.AddCmd(&ishell.Cmd{
-		Name: "d",
-		Help: "initial blocks download",
-		Func: func(c *ishell.Context) {
-			node.initialBlockDownload()
-		},
-	})
-
-	shell.AddCmd(&ishell.Cmd{
 		Name: "-ap",
 		Help: "add peer, format: -ap <IP>[:port] <peer ID>",
 		Func: func(c *ishell.Context) {

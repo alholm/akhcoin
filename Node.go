@@ -116,13 +116,21 @@ func (node *AkhNode) Receive(bd BlockData, peerId peer.ID) {
 		return
 	}
 
-	//filter outdated blocks
-	valid, err := node.poll.IsValid(&bd, GetTimeStamp())
+	//in case we've just joined network we have no option but to trust first block we received is valid
+	//and download whole chain from peer sent it.
+	//Known attack here is fraud producer will change number of votes in the block, so that poll state will differ from
+	//correct one and node will decline true blocks. But in this case the chain block is on may consist only of blocks
+	//produced by that single misbehaved producer, which will become visible soon.
 
-	log.Debugf("Block received: %s, valid: %v\n", bd.Hash, valid)
-	if !valid {
-		log.Error(err)
-		return
+	if node.Head != node.Genesis {
+		//filter outdated and misproduced blocks
+		valid, err := node.poll.IsValid(&bd, GetTimeStamp())
+
+		log.Debugf("Block received: %s, valid: %v\n", bd.Hash, valid)
+		if !valid {
+			log.Error(err)
+			return
+		}
 	}
 
 	verified, err := Verify(&bd)
@@ -302,26 +310,6 @@ func (node *AkhNode) Vote(peerIdStr string) {
 
 func (node *AkhNode) GetPrivate() crypto.PrivKey {
 	return node.Host.Peerstore().PrivKey(node.Host.ID())
-}
-
-func (node *AkhNode) initialBlockDownload() {
-	for _, peerID := range node.Host.Peerstore().Peers() {
-		log.Debugf("%s requesting block from %s\n", node.Host.ID().Pretty(), peerID.Pretty())
-		//block, err := node.Host.GetBlock(peerID)
-		//if err != nil {
-		//	log.Error(err)
-		//	continue
-		//}
-		//for block != nil {
-		//	valid, err := Verify(block)
-		//	if !valid {
-		//		log.Warning(err)
-		//		//TODO
-		//	}
-		//	node.attach(block)
-		//	block = block.Next
-		//}
-	}
 }
 
 func (node *AkhNode) testPay() {
