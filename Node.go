@@ -37,6 +37,7 @@ type Node interface {
 type AkhNode struct {
 	Host             p2p.AkhHost
 	transactionsPool []Transaction //TODO avoid duplication (can't just use map of T as T has byte arrays which don't define equity
+	votesPool        []Vote
 	poll             *consensus.Poll
 	Genesis          *Block
 	Head             *Block
@@ -46,11 +47,13 @@ type AkhNode struct {
 func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 	genesis := CreateGenesis()
 	transactionPool := make([]Transaction, 0, 100) //magic constant
+	votesPool := make([]Vote, 0, 100)              //magic constant
 
 	host := p2p.StartHost(port, privateKey, true)
 
 	node = &AkhNode{
 		transactionsPool: transactionPool,
+		votesPool:        votesPool,
 		poll: consensus.NewPoll(viper.GetInt("poll.MaxDelegates"), viper.GetInt("poll.MaxVotes"),
 			viper.GetDuration("poll.freezePeriod")*time.Second, genesis.TimeStamp),
 		Genesis: genesis,
@@ -107,6 +110,11 @@ func (node *AkhNode) addTransactionToPool(t Transaction) {
 	node.Lock()
 	defer node.Unlock()
 	node.transactionsPool = append(node.transactionsPool, t)
+}
+
+//TODO synchronize
+func (node *AkhNode) addVoteToPool(v Vote) {
+	node.votesPool = append(node.votesPool, v)
 }
 
 //TODO think of reaction to invalid block
@@ -266,17 +274,21 @@ func (node *AkhNode) ReceiveVote(v Vote) {
 	if err != nil {
 		log.Errorf("Failed to submit vote: %s\n", err)
 	}
+
+	node.addVoteToPool(v)
 }
 
 func (node *AkhNode) Produce() (block *Block, err error) {
 	node.Lock()
 	defer node.Unlock()
-	pool := node.transactionsPool
+	txnsPool := node.transactionsPool
+	votesPool := node.votesPool
 	privateKey := node.Host.Peerstore().PrivKey(node.Host.ID())
-	block = NewBlock(privateKey, node.Head, pool)
+	block = NewBlock(privateKey, node.Head, txnsPool, votesPool)
 	node.Head = block
 
-	node.transactionsPool = pool[:0]
+	node.transactionsPool = txnsPool[:0]
+	node.votesPool = votesPool[:0]
 
 	log.Infof("%s: New Block hash = %s\n", node.Host.ID().Pretty(), block.Hash)
 
@@ -306,6 +318,8 @@ func (node *AkhNode) Vote(peerIdStr string) {
 
 	vote := NewVote(node.GetPrivate(), peerId)
 	node.Host.PublishVote(vote)
+
+	node.ReceiveVote(*vote)
 }
 
 func (node *AkhNode) GetPrivate() crypto.PrivKey {

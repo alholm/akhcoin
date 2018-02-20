@@ -50,7 +50,7 @@ func (v *Vote) Verify() (result bool, err error) {
 }
 
 func (v *Vote) String() string {
-	return fmt.Sprintf("%s voted for to %s", v.Voter, v.Candidate)
+	return fmt.Sprintf("%s voted for %s", v.Voter, v.Candidate)
 }
 
 func NewVote(private crypto.PrivKey, candidate peer.ID) *Vote {

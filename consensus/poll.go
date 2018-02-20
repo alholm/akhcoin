@@ -123,7 +123,7 @@ func (p *Poll) startListening() {
 
 			p.updateTop(Candidate{candidate.id, votesN})
 
-			//log.Debugf("-> %s = %d ; %v", candidate, votesN, p.top)
+			//log.Debugf("-> %s = %d ; %v", candidate.id, votesN, p.top)
 
 		case <-p.newRoundChan:
 			//TODO consider clearing by range deletion to decrease GC load

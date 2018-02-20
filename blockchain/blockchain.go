@@ -15,13 +15,18 @@ import (
 type BlockData struct {
 	Hash         string
 	ParentHash   string
-	Transactions []TxWrapper
+	Transactions Transactions
+	Votes        Votes
 	Nonce        uuid.UUID
 	Sign         []byte
 	Signer       string
 	PublicKey    []byte
 	TimeStamp    int64
 }
+
+type Transactions []TxWrapper
+
+type Votes []Vote
 
 func (b *BlockData) GetSigner() string {
 	return b.Signer
@@ -38,6 +43,9 @@ func (b *BlockData) GetCorpus() []byte {
 	corpus.Write(b.Nonce.Bytes())
 	for _, t := range b.Transactions {
 		corpus.Write(t.T.Sign)
+	}
+	for _, v := range b.Votes {
+		corpus.Write(v.Sign)
 	}
 	timeStampBytes := make([]byte, 16)
 	binary.PutVarint(timeStampBytes, b.TimeStamp)
@@ -75,7 +83,7 @@ func CreateGenesis() *Block {
 		TimeStamp: time.Date(2018, 02, 13, 06, 00, 00, 00, time.UTC).UnixNano()}}
 }
 
-func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction) *Block {
+func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction, votesPool []Vote) *Block {
 	txnWrappers := collectTransactions(parent.lastTransaction(), txnsPool)
 
 	nonce, _ := uuid.NewV1()
@@ -83,6 +91,7 @@ func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction) 
 	block := &Block{
 		BlockData{
 			Transactions: txnWrappers,
+			Votes:        votesPool,
 			Nonce:        nonce,
 			ParentHash:   parent.Hash,
 		},
@@ -173,12 +182,21 @@ func Verify(block *BlockData) (valid bool, err error) {
 
 	for _, t := range block.Transactions {
 		transaction := t.T
-		valid, err := verify(transaction)
+		valid, err = verify(transaction)
 		if !valid {
 			err = fmt.Errorf("invalid transaction in block: %s sent %d to %s: %s", transaction.GetSigner(),
 				transaction.Amount, transaction.Recipient, err)
-			break
+			return
 		}
 	}
+
+	for _, v := range block.Votes {
+		valid, err = verify(&v)
+		if !valid {
+			err = fmt.Errorf("invalid vote in block: %s voted for %s: %s", v.GetSigner(), v.Candidate, err)
+			return
+		}
+	}
+
 	return
 }

@@ -3,20 +3,12 @@ package main
 import (
 	"akhcoin/blockchain"
 	"akhcoin/consensus"
-	"fmt"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/spf13/viper"
 	"testing"
 	"time"
 )
-
-func init() {
-	logging.SetLogLevel("consensus", "DEBUG")
-	logging.SetLogLevel("p2p", "DEBUG")
-
-	viper.Set("poll.maxDelegates", 3)
-}
 
 func TestAkhNode_switchToLongest(t *testing.T) {
 
@@ -107,11 +99,13 @@ func TestAkhNode_switchToLongest(t *testing.T) {
 }
 
 func TestInitialBlockDownload(t *testing.T) {
-	logging.SetLogLevel("main", "DEBUG")
+	logging.SetLogLevel("consensus", "DEBUG")
 	logging.SetLogLevel("p2p", "DEBUG")
+
 	period := int64(500 * time.Millisecond)
 	viper.Set("poll.period", period)
 	viper.Set("poll.epsilon", int64(10*time.Millisecond))
+	viper.Set("poll.maxDelegates", 3)
 
 	var nodes [3]*AkhNode
 	for i := 0; i < 3; i++ {
@@ -122,29 +116,25 @@ func TestInitialBlockDownload(t *testing.T) {
 	nodes[1].testPay()
 	nodes[2].testPay()
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(consensus.UntilNext(period))
 
 	l := len(nodes[0].transactionsPool)
 	if l != 2 {
 		t.Errorf("%d transactions in pull, has to be 2", l)
 	}
-	//TODO has to receive own vote
-	vote1 := blockchain.NewVote(nodes[0].GetPrivate(), nodes[1].Host.ID())
-	nodes[0].Host.PublishVote(vote1)
-	nodes[0].poll.SubmitVote(*vote1)
-	fmt.Printf("%s voted for %s\n", vote1.Voter, vote1.Candidate)
 
-	vote2 := blockchain.NewVote(nodes[1].GetPrivate(), nodes[2].Host.ID())
-	nodes[1].Host.PublishVote(vote2)
-	nodes[1].poll.SubmitVote(*vote2)
-	fmt.Printf("%s voted for %s\n", vote2.Voter, vote2.Candidate)
+	nodes[0].Vote(nodes[1].Host.ID().Pretty())
+	time.Sleep(30 * time.Millisecond)
 
-	vote3 := blockchain.NewVote(nodes[2].GetPrivate(), nodes[0].Host.ID())
-	nodes[2].Host.PublishVote(vote3)
-	nodes[2].poll.SubmitVote(*vote3)
-	fmt.Printf("%s voted for %s\n", vote3.Voter, vote1.Candidate)
+	nodes[1].Vote(nodes[2].Host.ID().Pretty())
+	time.Sleep(30 * time.Millisecond)
+	nodes[2].Vote(nodes[0].Host.ID().Pretty())
+	time.Sleep(30 * time.Millisecond)
 
-	time.Sleep(100 * time.Millisecond)
+	l = len(nodes[0].votesPool)
+	if l != 3 {
+		t.Fatalf("%d votes in pull, has to be 3", l)
+	}
 
 	time.Sleep(consensus.UntilNext(period))
 
