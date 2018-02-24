@@ -13,6 +13,7 @@ type Signable interface {
 	GetPublicKey() []byte
 	GetCorpus() []byte
 	GetSign() []byte
+	GetTimestamp() int64
 }
 
 type Transaction struct {
@@ -21,6 +22,7 @@ type Transaction struct {
 	Amount    uint64
 	Sign      []byte
 	PublicKey []byte
+	TimeStamp int64
 }
 
 func (t *Transaction) GetSigner() string {
@@ -39,12 +41,19 @@ func (t *Transaction) GetCorpus() []byte {
 	amountBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(amountBytes, t.Amount)
 	corpus.Write(amountBytes)
+	timeStampBytes := make([]byte, 16)
+	binary.PutVarint(timeStampBytes, t.TimeStamp)
+	corpus.Write(timeStampBytes)
 	return corpus.Bytes()
 
 }
 
 func (t *Transaction) GetSign() []byte {
 	return t.Sign
+}
+
+func (t *Transaction) GetTimestamp() int64 {
+	return t.TimeStamp
 }
 
 func (t *Transaction) String() string {
@@ -60,7 +69,7 @@ func Pay(private crypto.PrivKey, recipient peer.ID, amount uint64) *Transaction 
 	sender, _ := peer.IDFromPrivateKey(private)
 	public, _ := private.GetPublic().Bytes()
 
-	t := Transaction{Sender: sender.Pretty(), Recipient: recipient.Pretty(), Amount: amount, PublicKey: public}
+	t := Transaction{Sender: sender.Pretty(), Recipient: recipient.Pretty(), Amount: amount, PublicKey: public, TimeStamp: GetTimeStamp()}
 	sign, _ := private.Sign(t.GetCorpus())
 	t.Sign = sign
 

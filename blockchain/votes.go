@@ -41,6 +41,10 @@ func (v *Vote) GetSign() []byte {
 	return v.Sign
 }
 
+func (v *Vote) GetTimestamp() int64 {
+	return v.TimeStamp
+}
+
 func (v *Vote) Verify() (result bool, err error) {
 	if v.Voter == v.Candidate {
 		err = fmt.Errorf("self voting")

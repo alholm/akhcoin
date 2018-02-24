@@ -12,6 +12,7 @@ import (
 	"github.com/satori/go.uuid"
 )
 
+//All fields should be public to be able to deserialize
 type BlockData struct {
 	Hash         string
 	ParentHash   string
@@ -56,6 +57,10 @@ func (b *BlockData) GetCorpus() []byte {
 
 func (b *BlockData) GetSign() []byte {
 	return b.Sign
+}
+
+func (b *BlockData) GetTimestamp() int64 {
+	return b.TimeStamp
 }
 
 func (b *BlockData) String() string {
@@ -173,15 +178,28 @@ func verify(s Signable) (result bool, err error) {
 }
 
 //Block cryptographic verification
-func Verify(block *BlockData) (valid bool, err error) {
+func Verify(block *BlockData, parent *BlockData) (valid bool, err error) {
+	if block.ParentHash != parent.Hash {
+		err = fmt.Errorf("block %s has %s ParentHash, %s required", block.Hash, block.ParentHash, parent.Hash)
+		return
+	}
+
 	valid, err = verify(block)
 	if !valid {
 		err = fmt.Errorf("invalid block: %s: %s", block.Hash, err)
 		return
 	}
 
+	lastTS := parent.GetTimestamp()
 	for _, t := range block.Transactions {
 		transaction := t.T
+		//Transactions must be crated only within block production time frame
+		if t.T.GetTimestamp() < lastTS || t.T.GetTimestamp() > block.TimeStamp {
+			err = fmt.Errorf("block %s transaction: %s has wrong timestamp", block.Hash, t.T)
+			return
+		}
+		lastTS = t.T.GetTimestamp()
+
 		valid, err = verify(transaction)
 		if !valid {
 			err = fmt.Errorf("invalid transaction in block: %s sent %d to %s: %s", transaction.GetSigner(),

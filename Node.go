@@ -3,7 +3,6 @@ package main
 import (
 	. "akhcoin/blockchain"
 	"akhcoin/p2p"
-	"bytes"
 	"math/rand"
 	"sync"
 	"time"
@@ -13,6 +12,8 @@ import (
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
 	"github.com/spf13/viper"
+	"akhcoin/balances"
+	"sort"
 )
 
 func init() {
@@ -24,16 +25,6 @@ func init() {
 	}
 }
 
-type Node interface {
-	Vote(sign string, addr string)
-
-	Produce() (*Block, error)
-
-	Receive(*Block)
-
-	ReceiveTransaction(t Transaction)
-}
-
 type AkhNode struct {
 	Host             p2p.AkhHost
 	transactionsPool []Transaction //TODO avoid duplication (can't just use map of T as T has byte arrays which don't define equity
@@ -41,6 +32,7 @@ type AkhNode struct {
 	poll             *consensus.Poll
 	Genesis          *Block
 	Head             *Block
+	balances         *balances.Balances
 	sync.Mutex
 }
 
@@ -55,10 +47,11 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 		transactionsPool: transactionPool,
 		votesPool:        votesPool,
 		poll: consensus.NewPoll(viper.GetInt("poll.MaxDelegates"), viper.GetInt("poll.MaxVotes"),
-			viper.GetDuration("poll.freezePeriod")*time.Second, genesis.TimeStamp),
-		Genesis: genesis,
-		Head:    genesis,
-		Host:    host,
+			viper.GetDuration("poll.freezePeriod")*time.Second, genesis.GetTimestamp()),
+		Genesis:  genesis,
+		Head:     genesis,
+		balances: balances.NewBalances(),
+		Host:     host,
 	}
 
 	brp := &p2p.BlockStreamHandler{Head: &node.Head}
@@ -94,10 +87,20 @@ func NewAkhNode(port int, privateKey []byte) (node *AkhNode) {
 	return
 }
 
+//Check whether transaction was created during current production period
+//TODO Txns created at the end of production period may get lost
+func (node *AkhNode) timeValid(s Signable) bool {
+	currentTimeStamp := GetTimeStamp()
+	currentSlotStart := node.poll.GetCurrentSlotStart(currentTimeStamp)
+	return s.GetTimestamp() > currentSlotStart && s.GetTimestamp() < currentTimeStamp
+}
+
 func (node *AkhNode) ReceiveTransaction(t Transaction) {
 	verified, err := t.Verify()
-	log.Debugf("Txn received: %s, VERIFIED=%t\n", &t, verified)
-	if err != nil {
+	timeValid := node.timeValid(&t)
+
+	log.Debugf("Txn received: %s, Verified=%t, time valid: %t\n", &t, verified, timeValid)
+	if err != nil || !timeValid {
 		log.Warningf("Invalid transaction received: %s\n", err)
 		return
 	}
@@ -105,10 +108,8 @@ func (node *AkhNode) ReceiveTransaction(t Transaction) {
 	node.addTransactionToPool(t)
 }
 
-//Synchronous operation, consider using channels
+//TODO synchronize
 func (node *AkhNode) addTransactionToPool(t Transaction) {
-	node.Lock()
-	defer node.Unlock()
 	node.transactionsPool = append(node.transactionsPool, t)
 }
 
@@ -120,6 +121,9 @@ func (node *AkhNode) addVoteToPool(v Vote) {
 //TODO think of reaction to invalid block
 //TODO retransmit valid block
 func (node *AkhNode) Receive(bd BlockData, peerId peer.ID) {
+	node.Lock()
+	defer node.Unlock()
+
 	if bd.Hash == node.Head.Hash {
 		return
 	}
@@ -140,23 +144,11 @@ func (node *AkhNode) Receive(bd BlockData, peerId peer.ID) {
 			return
 		}
 	}
-
-	verified, err := Verify(&bd)
-
-	log.Debugf("Block received: %s, verified: %v\n", bd.Hash, verified)
-	if !verified {
-		log.Error(err)
-		return
-	}
-
 	if bd.ParentHash == node.Head.Hash {
 		node.attach(bd)
-		node.adjustPool(bd)
 	} else {
 		//switch to the longest chain if there is one, decline otherwise
 		node.switchToLongest(bd, peerId)
-		//TODO
-		//node.adjustPool(new fork)
 	}
 }
 
@@ -170,14 +162,14 @@ func (node *AkhNode) switchToLongest(forkTip BlockData, peerId peer.ID) {
 
 	for {
 
-		for hisBlock.TimeStamp > myBlock.TimeStamp {
+		for hisBlock.GetTimestamp() > myBlock.GetTimestamp() {
 			var err error
 			hisBlock, err = node.getParent(hisBlock, peerId)
 			if err != nil {
 				log.Error(err)
 				return
 			}
-			_, err = node.isValidParent(hisBlock, forkTip)
+			_, err = node.isValidForkElement(hisBlock, forkTip)
 			if err != nil {
 				log.Error(err)
 				return
@@ -186,14 +178,15 @@ func (node *AkhNode) switchToLongest(forkTip BlockData, peerId peer.ID) {
 			hisForkLen++
 		}
 
-		for myBlock.TimeStamp > hisBlock.TimeStamp && myBlock != node.Genesis {
+		for myBlock.GetTimestamp() > hisBlock.GetTimestamp() && myBlock != node.Genesis {
 			myBlock = myBlock.Parent
+			//TODO revert block transactions
 			myForkLen++
 		}
 
 		//myBlock and hisBlock hashes can not be different at this point, as all blocks were verified
 		//timestamps of the block fork started from are _exactly_ the same as blocks are identical
-		if hisBlock.TimeStamp == myBlock.TimeStamp {
+		if hisBlock.GetTimestamp() == myBlock.GetTimestamp() {
 			break
 		}
 	}
@@ -201,11 +194,20 @@ func (node *AkhNode) switchToLongest(forkTip BlockData, peerId peer.ID) {
 		return
 	}
 
+	originalHead := node.Head
 	node.Head = myBlock
+	//TODO reconstruct poll and accounts state at this block
 	for hisBlock.Next != nil {
-		node.attach(hisBlock.Next.BlockData)
+		err := node.attach(hisBlock.Next.BlockData)
+		if err != nil {
+			log.Errorf("Couldn't switch to fork with tip %s: block %s invalid: %s", forkTip.Hash, hisBlock.Next.BlockData.Hash, err)
+			node.Head = originalHead
+			//TODO reconstruct poll and balances
+			return
+		}
 		hisBlock = hisBlock.Next
 	}
+	node.adjustPool(forkTip)
 }
 
 func (node *AkhNode) getParent(block *Block, peerId peer.ID) (parent *Block, err error) {
@@ -218,54 +220,86 @@ func (node *AkhNode) getParent(block *Block, peerId peer.ID) (parent *Block, err
 	return
 }
 
-//TODO timestamps safe comparison
-func (node *AkhNode) isValidParent(block *Block, forkTip BlockData) (valid bool, err error) {
-	if block.Next.ParentHash != block.Hash || block.Next.TimeStamp-block.TimeStamp < node.poll.Period()-consensus.Epsilon {
+func (node *AkhNode) isValidForkElement(block *Block, forkTip BlockData) (valid bool, err error) {
+	if block.Next.ParentHash != block.Hash || block.Next.GetTimestamp()-block.GetTimestamp() < node.poll.Period()-consensus.Epsilon {
 		err = fmt.Errorf("invalid parent in incoming fork, block: %s", block.Hash)
 		return
 	}
 
 	if block.Signer == forkTip.Signer {
 		roundDuration := node.poll.Period() * int64(node.poll.GetMaxElected())
-		if forkTip.TimeStamp-block.TimeStamp < roundDuration-consensus.Epsilon {
+		if forkTip.GetTimestamp()-block.GetTimestamp() < roundDuration-consensus.Epsilon {
 			err = fmt.Errorf("potential fraud: fork received from %s with block produced not in order", block.Signer)
 			return
-		}
-	}
-	valid, err = Verify(&(block.BlockData))
-	if !valid {
-		if block.BlockData.Hash == node.Genesis.Hash {
-			return true, nil
 		}
 	}
 
 	return
 }
 
-func (node *AkhNode) attach(bd BlockData) {
+func (node *AkhNode) attach(bd BlockData) (err error) {
+	verified, err := Verify(&bd, &node.Head.BlockData)
+
+	log.Debugf("Block received: %s, verified: %v\n", bd.Hash, verified)
+	if !verified {
+		log.Error(err)
+		return
+	}
+
+	err = node.updateBalances(bd)
+	if err != nil {
+		return err
+	}
 	block := &Block{BlockData: bd, Parent: node.Head}
 	node.Head.Next = block
 	node.Head = block
+
+	node.adjustPool(bd)
+	return
+}
+
+func (node *AkhNode) updateBalances(bd BlockData) (err error) {
+	txns := make([]Transaction, 0, len(bd.Transactions))
+	for _, t := range bd.Transactions {
+		txns = append(txns, *t.T)
+	}
+
+	validTxns := node.collectValidTxns(txns, false)
+	if len(txns) != len(validTxns) {
+		return fmt.Errorf("block %s contains incorrect transactions from balances perspective", bd.Hash)
+	}
+
+	for _, t := range bd.Transactions {
+		err := node.balances.Submit(*t.T)
+		if err != nil {
+			return fmt.Errorf("invalid block transaction: %s: %s", t.T, err)
+		}
+	}
+	return
 }
 
 func (node *AkhNode) adjustPool(bd BlockData) {
-	node.Lock()
-	defer node.Unlock()
-	for _, t := range bd.Transactions {
-		for j, y := range node.transactionsPool {
-			if bytes.Equal(y.Sign, t.T.Sign) {
-				//delete
-				node.transactionsPool = append(node.transactionsPool[:j], node.transactionsPool[j+1:]...)
-				break
-			}
-		}
-	}
+	//node.Lock()
+	//defer node.Unlock()
+	//we received new block, meaning that all transaction in pool are outdated by timeValid definition
+	//for _, t := range bd.Transactions {
+	//	for j, y := range node.transactionsPool {
+	//		if bytes.Equal(y.Sign, t.T.Sign) {
+	//			//delete
+	//			node.transactionsPool = append(node.transactionsPool[:j], node.transactionsPool[j+1:]...)
+	//			break
+	//		}
+	//	}
+	//}
+	node.transactionsPool = node.transactionsPool[:0]
 }
 
 func (node *AkhNode) ReceiveVote(v Vote) {
 	verified, err := v.Verify()
-	log.Debugf("Vote received: %s, VERIFIED=%t\n", &v, verified)
-	if err != nil {
+	timeValid := node.timeValid(&v)
+
+	log.Debugf("Vote received: %s, Verified=%t, time valid: %t\n", &v, verified, timeValid)
+	if err != nil || !timeValid {
 		log.Warningf("Invalid vote received: %s\n", err)
 		return
 	}
@@ -281,18 +315,51 @@ func (node *AkhNode) ReceiveVote(v Vote) {
 func (node *AkhNode) Produce() (block *Block, err error) {
 	node.Lock()
 	defer node.Unlock()
-	txnsPool := node.transactionsPool
+	txnsPool := node.collectValidTxns(node.transactionsPool, true)
 	votesPool := node.votesPool
 	privateKey := node.Host.Peerstore().PrivKey(node.Host.ID())
 	block = NewBlock(privateKey, node.Head, txnsPool, votesPool)
 	node.Head = block
 
-	node.transactionsPool = txnsPool[:0]
-	node.votesPool = votesPool[:0]
+	//TODO synchronize separately
+	node.transactionsPool = node.transactionsPool[:0]
+	node.votesPool = node.votesPool[:0]
 
 	log.Infof("%s: New Block hash = %s\n", node.Host.ID().Pretty(), block.Hash)
 
 	return
+}
+
+type ByTimestamp []Transaction
+
+func (t ByTimestamp) Len() int           { return len(t) }
+func (t ByTimestamp) Swap(i, j int)      { t[i], t[j] = t[j], t[i] }
+func (t ByTimestamp) Less(i, j int) bool { return t[i].GetTimestamp() < t[j].GetTimestamp() }
+
+//TODO far from optimal
+func (node *AkhNode) collectValidTxns(transactions []Transaction, skipInvalid bool) []Transaction {
+	sort.Sort(ByTimestamp(transactions))
+
+	result := make([]Transaction, len(transactions))
+	copy(result, transactions)
+
+	tempMap := make(map[string]uint64, len(transactions))
+	for _, t := range transactions {
+		tempMap[t.Sender] = node.balances.Get(t.Sender)
+	}
+
+	for i, t := range transactions {
+		if tempMap[t.Sender] >= t.Amount {
+			tempMap[t.Sender] -= t.Amount
+			tempMap[t.Recipient] += t.Amount
+		} else if skipInvalid {
+			result = append(result[:i], result[i+1:]...)
+		} else {
+			return []Transaction{}
+		}
+	}
+
+	return result
 }
 
 func (node *AkhNode) Announce(block *Block) (err error) {

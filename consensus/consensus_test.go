@@ -49,7 +49,7 @@ func TestPoll_GetCurrentSlot(t *testing.T) {
 	expected := []int{2, 3, 4, 4, 0, 1, 1, 2, 3}
 
 	for i := 0; i < 9; i++ {
-		_, slot := poll.getSlotAt(time.Now().UTC().UnixNano())
+		slot := poll.getSlotAt(time.Now().UTC().UnixNano())
 		if slot != expected[i] {
 			t.Errorf("Got %d slot, expected: %d", slot, expected[i])
 		}
