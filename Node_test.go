@@ -96,13 +96,16 @@ func TestAkhNode_switchToLongest(t *testing.T) {
 	if nodes[1].Head.Hash == forkEnd.Hash {
 		t.Error("switched to falsified fork when must not")
 	}
+
+	for i := 0; i < 3; i++ {
+		nodes[i].Host.Close()
+	}
 }
 
 func TestInitialBlockDownload(t *testing.T) {
-	logging.SetLogLevel("consensus", "DEBUG")
-	logging.SetLogLevel("p2p", "DEBUG")
+	logging.SetLogLevel("main", "DEBUG")
 
-	period := int64(500 * time.Millisecond)
+	period := int64(1000 * time.Millisecond)
 	viper.Set("poll.period", period)
 	viper.Set("poll.epsilon", int64(10*time.Millisecond))
 	viper.Set("poll.maxDelegates", 3)
@@ -111,18 +114,21 @@ func TestInitialBlockDownload(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		nodes[i] = startRandomNode(10765 + i)
 	}
-	time.Sleep(100 * time.Millisecond) //waiting for mdns
-
-	nodes[1].testPay()
-	nodes[2].testPay()
+	time.Sleep(200 * time.Millisecond) //waiting for mdns
 
 	time.Sleep(consensus.UntilNext(period))
+	time.Sleep(200 * time.Millisecond)
+	nodes[1].Pay(nodes[0].Host.ID().Pretty(), 42)
+	nodes[2].Pay(nodes[1].Host.ID().Pretty(), 24)
+	time.Sleep(100 * time.Millisecond)
 
 	l := len(nodes[0].transactionsPool)
 	if l != 2 {
 		t.Errorf("%d transactions in pull, has to be 2", l)
 	}
 
+	time.Sleep(consensus.UntilNext(period))
+	time.Sleep(30 * time.Millisecond)
 	nodes[0].Vote(nodes[1].Host.ID().Pretty())
 	time.Sleep(30 * time.Millisecond)
 

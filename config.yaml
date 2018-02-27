@@ -4,3 +4,4 @@ poll:
   freezePeriod: 20 #sec
   period: 10000000000 #nanosec = 10sec
   epsilon: 1000000 #nanosec = 1ms
+reward: 1

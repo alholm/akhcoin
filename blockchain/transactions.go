@@ -1,7 +1,6 @@
 package blockchain
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"github.com/libp2p/go-libp2p-crypto"
@@ -35,15 +34,11 @@ func (t *Transaction) GetPublicKey() []byte {
 
 func (t *Transaction) GetCorpus() []byte {
 	// Gather corpus to Sign.
-	corpus := new(bytes.Buffer)
-	corpus.Write([]byte(t.Sender))
+	corpus := getBasicCorpus(t)
 	corpus.Write([]byte(t.Recipient))
-	amountBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(amountBytes, t.Amount)
+	amountBytes := make([]byte, 16)
+	binary.PutUvarint(amountBytes, t.Amount)
 	corpus.Write(amountBytes)
-	timeStampBytes := make([]byte, 16)
-	binary.PutVarint(timeStampBytes, t.TimeStamp)
-	corpus.Write(timeStampBytes)
 	return corpus.Bytes()
 
 }
@@ -61,6 +56,10 @@ func (t *Transaction) String() string {
 }
 
 func (t *Transaction) Verify() (result bool, err error) {
+	if t.Sender == t.Recipient {
+		err = fmt.Errorf("self payment")
+		return
+	}
 	return verify(t)
 }
 

@@ -9,7 +9,7 @@ import (
 
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
-	"github.com/satori/go.uuid"
+	"github.com/spf13/viper"
 )
 
 //All fields should be public to be able to deserialize
@@ -18,11 +18,11 @@ type BlockData struct {
 	ParentHash   string
 	Transactions Transactions
 	Votes        Votes
-	Nonce        uuid.UUID
 	Sign         []byte
 	Signer       string
 	PublicKey    []byte
 	TimeStamp    int64
+	Reward       uint
 }
 
 type Transactions []TxWrapper
@@ -37,22 +37,32 @@ func (b *BlockData) GetPublicKey() []byte {
 	return b.PublicKey
 }
 
+func getBasicCorpus(s Signable) *bytes.Buffer {
+	corpus := new(bytes.Buffer)
+	corpus.Write([]byte(s.GetSigner()))
+	corpus.Write(getBytes(s.GetTimestamp()))
+	return corpus
+}
+
 func (b *BlockData) GetCorpus() []byte {
 	// Gather corpus to Sign.
-	corpus := new(bytes.Buffer)
+	corpus := getBasicCorpus(b)
 	corpus.Write([]byte(b.ParentHash))
-	corpus.Write(b.Nonce.Bytes())
 	for _, t := range b.Transactions {
 		corpus.Write(t.T.Sign)
 	}
 	for _, v := range b.Votes {
 		corpus.Write(v.Sign)
 	}
-	timeStampBytes := make([]byte, 16)
-	binary.PutVarint(timeStampBytes, b.TimeStamp)
-	corpus.Write(timeStampBytes)
+	corpus.Write(getBytes(int64(b.Reward)))
 
 	return corpus.Bytes()
+}
+
+func getBytes(n int64) []byte {
+	bytes := make([]byte, 16)
+	binary.PutVarint(bytes, n)
+	return bytes
 }
 
 func (b *BlockData) GetSign() []byte {
@@ -64,7 +74,7 @@ func (b *BlockData) GetTimestamp() int64 {
 }
 
 func (b *BlockData) String() string {
-	return fmt.Sprintf("%s, %s", b.Hash, b.Nonce.String())
+	return fmt.Sprintf("%s", b.Hash)
 }
 
 type Block struct {
@@ -91,13 +101,10 @@ func CreateGenesis() *Block {
 func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction, votesPool []Vote) *Block {
 	txnWrappers := collectTransactions(parent.lastTransaction(), txnsPool)
 
-	nonce, _ := uuid.NewV1()
-
 	block := &Block{
 		BlockData{
 			Transactions: txnWrappers,
 			Votes:        votesPool,
-			Nonce:        nonce,
 			ParentHash:   parent.Hash,
 		},
 		parent,
@@ -106,6 +113,7 @@ func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction, 
 	block.Hash = Hash(block.GetCorpus())
 	parent.Next = block
 	block.TimeStamp = GetTimeStamp()
+	block.Reward = uint(viper.GetInt("reward"))
 
 	//TODO error handling
 	id, _ := peer.IDFromPrivateKey(privateKey)
@@ -181,6 +189,12 @@ func verify(s Signable) (result bool, err error) {
 func Verify(block *BlockData, parent *BlockData) (valid bool, err error) {
 	if block.ParentHash != parent.Hash {
 		err = fmt.Errorf("block %s has %s ParentHash, %s required", block.Hash, block.ParentHash, parent.Hash)
+		return
+	}
+
+	requiredReward := uint(viper.GetInt("reward"))
+	if block.Reward != requiredReward {
+		err = fmt.Errorf("block %s has incorrect reward = %d, required: %d", block.Hash, block.Reward, requiredReward)
 		return
 	}
 

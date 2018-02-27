@@ -13,6 +13,7 @@ import (
 	"github.com/abiosoft/ishell"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
+	"strconv"
 )
 
 var log = logging.Logger("main")
@@ -109,22 +110,41 @@ func main() {
 	shell := ishell.New()
 
 	shell.AddCmd(&ishell.Cmd{
-		Name: "p",
-		Help: "pay user",
+		Name: "pay",
+		Help: "pay user, format: pay <Peer ID> <amount>",
 		Func: func(c *ishell.Context) {
-			node.testPay()
+			if len(c.Args) < 2 {
+				c.Err(fmt.Errorf("not enough arguments"))
+				return
+			}
+			peerId := c.Args[0]
+			amountStr := c.Args[1]
+			amount, err := strconv.ParseUint(amountStr, 0, 64)
+			if err != nil {
+				c.Err(err)
+				return
+			}
+
+			err = node.Pay(peerId, amount)
+			if err != nil {
+				c.Err(err)
+			}
+
 		},
 	})
 
 	shell.AddCmd(&ishell.Cmd{
-		Name: "g",
-		Help: "generate block",
+		Name: "v",
+		Help: "vote, format: vote <Peer ID>",
 		Func: func(c *ishell.Context) {
-			_, err := node.Produce()
+			peerId := ""
+			if len(c.Args) == 0 {
+				c.Err(fmt.Errorf("not enough arguments"))
+				return
+			}
+			err := node.Vote(peerId)
 			if err != nil {
-				err = fmt.Errorf("failed to produce new block: %s", err)
 				c.Err(err)
-				log.Warning(err)
 			}
 		},
 	})
@@ -134,25 +154,13 @@ func main() {
 		Help: "add peer, format: -ap <IP>[:port] <peer ID>",
 		Func: func(c *ishell.Context) {
 			if len(c.Args) < 2 {
-				c.Println("Not enough arguments, see help")
+				c.Err(fmt.Errorf("not enough arguments, see help"))
 				return
 			}
 			err := node.Host.AddPeerManually(c.Args[0], c.Args[1])
 			if err != nil {
 				c.Err(err)
 			}
-		},
-	})
-
-	shell.AddCmd(&ishell.Cmd{
-		Name: "v",
-		Help: "vote, format: vote <Peer ID>",
-		Func: func(c *ishell.Context) {
-			peerId := ""
-			if len(c.Args) > 0 {
-				peerId = c.Args[0]
-			}
-			node.Vote(peerId)
 		},
 	})
 
@@ -177,7 +185,7 @@ func generateAndDumpKeys() (privateBytes []byte, err error) {
 
 func startHttpServer(node *AkhNode, port *int) {
 	viewHandler := func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "<h1>%s</h1><div>%s</div>", node.Head.Nonce, node.Head.Hash)
+		fmt.Fprintf(w, "<h1>%s</h1>", node.Head.Hash)
 	}
 	http.HandleFunc("/", viewHandler)
 	go http.ListenAndServe(fmt.Sprintf(":%d", *port-1000), nil)

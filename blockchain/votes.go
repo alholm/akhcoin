@@ -1,8 +1,6 @@
 package blockchain
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/libp2p/go-libp2p-crypto"
@@ -27,14 +25,9 @@ func (v *Vote) GetPublicKey() []byte {
 
 func (v *Vote) GetCorpus() []byte {
 	// Gather corpus to Sign.
-	corpus := new(bytes.Buffer)
-	corpus.Write([]byte(v.Voter))
+	corpus := getBasicCorpus(v)
 	corpus.Write([]byte(v.Candidate))
-	timeStampBytes := make([]byte, 16)
-	binary.PutVarint(timeStampBytes, v.TimeStamp)
-	corpus.Write(timeStampBytes)
 	return corpus.Bytes()
-
 }
 
 func (v *Vote) GetSign() []byte {
