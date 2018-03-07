@@ -6,7 +6,8 @@ Original goal of this project is educational: understand what challenges blockch
 However final result is intended to be fully functional "production ready" software, maybe will even become valuable cryptocurrency :smiley:
 
 ## Roadmap
-see [Project](https://github.com/alholm/akhcoin/projects/1)
+- see [Project](https://github.com/alholm/akhcoin/projects/1)
+- [Refacoring](https://github.com/alholm/akhcoin/issues/23)
 
 ## Installation
 
