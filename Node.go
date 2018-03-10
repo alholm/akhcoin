@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"akhcoin/balances"
 	"akhcoin/consensus"
 	"fmt"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
 	"github.com/spf13/viper"
-	"akhcoin/balances"
 )
 
 func init() {
@@ -263,7 +263,7 @@ func (node *AkhNode) attach(bd BlockData) (err error) {
 func (node *AkhNode) updateBalances(bd BlockData) (err error) {
 	txns := make([]Transaction, 0, len(bd.Transactions))
 	for _, t := range bd.Transactions {
-		txns = append(txns, *t.T)
+		txns = append(txns, t)
 	}
 
 	validTxns := node.balances.CollectValidTxns(txns, false)
@@ -272,9 +272,9 @@ func (node *AkhNode) updateBalances(bd BlockData) (err error) {
 	}
 
 	for _, t := range bd.Transactions {
-		err := node.balances.Submit(*t.T)
+		err := node.balances.Submit(t)
 		if err != nil {
-			return fmt.Errorf("invalid block transaction: %s: %s", t.T, err)
+			return fmt.Errorf("invalid block transaction: %s: %s", &t, err)
 		}
 	}
 

@@ -105,7 +105,11 @@ func getPeers(h *AkhHost, peerInfos []ps.PeerInfo, depth int, ch chan TestedPeer
 			ch <- testedPeer
 
 			if depth != 0 {
-				peerPeers, _ := h.askForPeers(peerInfo.ID)
+				peerPeers, err := h.askForPeers(peerInfo.ID)
+				if err != nil {
+					log.Debugf("asking for peers failed: %s\n", err)
+					return
+				}
 				getPeers(h, peerPeers, depth-1, ch, countCh)
 			}
 		}(peerInfo)
@@ -204,6 +208,8 @@ func (h *AkhHost) AddPeerManually(remotePeerAddr string, remotePeerID string) (e
 	}
 	return
 }
+
+//for mdns discovery
 
 type DiscoveryNotifee struct {
 	h *AkhHost

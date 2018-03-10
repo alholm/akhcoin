@@ -76,11 +76,9 @@ func StartHost(port int, privateKey []byte, withDiscovery bool) AkhHost {
 
 	if withDiscovery {
 		akhHost.startMdnsDiscovery()
-
-		//TODO temp, think where it belongs
-		drp := &DiscoverStreamHandler{&ps}
-		akhHost.AddStreamHandler(drp)
 	}
+	drp := &DiscoverStreamHandler{&ps}
+	akhHost.AddStreamHandler(drp)
 
 	log.Infof("Host %s %s on %v started\n", akhHost.ID().Pretty(), akhHost.ID(), []ma.Multiaddr{listen})
 
@@ -93,7 +91,7 @@ func (h *AkhHost) startMdnsDiscovery() {
 		log.Errorf("Failed to start mdns service: %s\n", err)
 		return
 	}
-	//libp2p dicovery switches stderr logging off because mdns floods it, this is how maybe returned back:
+	//libp2p discovery switches stderr logging off because mdns floods it, this is how it may be returned back:
 	//commonLog.SetOutput(os.Stderr) //import commonLog "log"
 	notifee := &DiscoveryNotifee{h}
 	dnsService.RegisterNotifee(notifee)

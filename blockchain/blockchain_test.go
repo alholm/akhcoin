@@ -24,11 +24,11 @@ func ExampleNewBlock() {
 	fmt.Println(verified)
 
 	block.Reward = 50
-	block.Transactions[0].T.Amount = 0
+	block.Transactions[0].Amount = 0
 	verified, _ = Verify(&block.BlockData, &parent.BlockData)
 	fmt.Println(verified)
 
-	block.Transactions[0].T.Amount = 42
+	block.Transactions[0].Amount = 42
 	block.Votes[0].Candidate = "third"
 	verified, _ = Verify(&block.BlockData, &parent.BlockData)
 	fmt.Println(verified)

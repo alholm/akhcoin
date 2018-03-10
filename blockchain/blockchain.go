@@ -25,7 +25,7 @@ type BlockData struct {
 	Reward       uint
 }
 
-type Transactions []TxWrapper
+type Transactions []Transaction
 
 type Votes []Vote
 
@@ -49,7 +49,7 @@ func (b *BlockData) GetCorpus() []byte {
 	corpus := getBasicCorpus(b)
 	corpus.Write([]byte(b.ParentHash))
 	for _, t := range b.Transactions {
-		corpus.Write(t.T.Sign)
+		corpus.Write(t.Sign)
 	}
 	for _, v := range b.Votes {
 		corpus.Write(v.Sign)
@@ -83,11 +83,6 @@ type Block struct {
 	Next   *Block
 }
 
-type TxWrapper struct {
-	T          *Transaction
-	Prev, Next *Transaction
-}
-
 func NewKeys() (crypto.PrivKey, crypto.PubKey, error) {
 	private, public, err := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	return private, public, err
@@ -99,11 +94,9 @@ func CreateGenesis() *Block {
 }
 
 func NewBlock(privateKey crypto.PrivKey, parent *Block, txnsPool []Transaction, votesPool []Vote) *Block {
-	txnWrappers := collectTransactions(parent.lastTransaction(), txnsPool)
-
 	block := &Block{
 		BlockData{
-			Transactions: txnWrappers,
+			Transactions: txnsPool,
 			Votes:        votesPool,
 			ParentHash:   parent.Hash,
 		},
@@ -132,31 +125,6 @@ func GetTimeStamp() int64 {
 //TODO implement network time adjustment
 func CurrentTime() time.Time {
 	return time.Now().UTC()
-}
-
-func (b *Block) lastTransaction() (t *Transaction) {
-	l := len(b.Transactions)
-	if l > 0 {
-		t = b.Transactions[l-1].T
-	}
-	return
-}
-
-//gathers all published but not confirmed transactions
-func collectTransactions(prevBlockTxn *Transaction, transactions []Transaction) (txwr []TxWrapper) {
-
-	txwr = make([]TxWrapper, len(transactions))
-	prev := prevBlockTxn
-	for i, t := range transactions {
-		wr := TxWrapper{T: &t, Prev: prev}
-		txwr[i] = wr
-		if i > 0 {
-			txwr[i-1].Next = &t
-		}
-		prev = &t
-	}
-
-	return
 }
 
 func HashStr(str string) string {
@@ -206,15 +174,15 @@ func Verify(block *BlockData, parent *BlockData) (valid bool, err error) {
 
 	lastTS := parent.GetTimestamp()
 	for _, t := range block.Transactions {
-		transaction := t.T
+		transaction := t
 		//Transactions must be crated only within block production time frame
-		if t.T.GetTimestamp() < lastTS || t.T.GetTimestamp() > block.TimeStamp {
-			err = fmt.Errorf("block %s transaction: %s has wrong timestamp", block.Hash, t.T)
+		if t.GetTimestamp() < lastTS || t.GetTimestamp() > block.TimeStamp {
+			err = fmt.Errorf("block %s transaction: %s has wrong timestamp", block.Hash, t)
 			return
 		}
-		lastTS = t.T.GetTimestamp()
+		lastTS = t.GetTimestamp()
 
-		valid, err = verify(transaction)
+		valid, err = verify(&transaction)
 		if !valid {
 			err = fmt.Errorf("invalid transaction in block: %s sent %d to %s: %s", transaction.GetSigner(),
 				transaction.Amount, transaction.Recipient, err)
