@@ -72,7 +72,7 @@ func NewPoll(maxDelegates int, maxVotes int, freezePeriod time.Duration, genesis
 }
 
 func (p *Poll) processVote(vote blockchain.Vote) {
-	voter := vote.Voter
+	voter := vote.Signer
 	voterInfo := p.votes[voter]
 	if time.Duration(vote.GetTimestamp()-voterInfo.timeStamp) < p.freezePeriod {
 		//TODO extract to upper level and punish voter (DoS prevention)

@@ -10,7 +10,7 @@ type Balances struct {
 	putChan      chan blockchain.Transaction
 	getChan      chan string
 	responseChan chan uint64
-	rewardChan chan struct {
+	rewardChan   chan struct {
 		string
 		uint
 	}
@@ -30,7 +30,7 @@ func NewBalances() *Balances {
 		for {
 			select {
 			case t := <-b.putChan:
-				(*b.m)[t.Sender] -= t.Amount
+				(*b.m)[t.GetSigner()] -= t.Amount
 				(*b.m)[t.Recipient] += t.Amount
 			case r := <-b.rewardChan:
 				(*b.m)[r.string] += uint64(r.uint)
@@ -75,13 +75,13 @@ func (b *Balances) CollectValidTxns(transactions []blockchain.Transaction, skipI
 
 	tempMap := make(map[string]uint64, len(transactions))
 	for _, t := range transactions {
-		tempMap[t.Sender] = b.Get(t.Sender)
+		tempMap[t.GetSigner()] = b.Get(t.GetSigner())
 	}
 
 	for i := 0; i < len(result); i++ {
 		t := result[i]
-		if tempMap[t.Sender] >= t.Amount {
-			tempMap[t.Sender] -= t.Amount
+		if tempMap[t.GetSigner()] >= t.Amount {
+			tempMap[t.GetSigner()] -= t.Amount
 			tempMap[t.Recipient] += t.Amount
 		} else if skipInvalid {
 			result = append(result[:i], result[i+1:]...)
