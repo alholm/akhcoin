@@ -16,21 +16,21 @@ func ExampleNewBlock() {
 	parent := CreateGenesis()
 	block := NewBlock(priv, parent, []Transaction{*t}, []Vote{*v})
 
-	verified, _ := Verify(&block.BlockData, &parent.BlockData)
+	verified, _ := block.Verify(&parent.BlockData)
 	fmt.Println(verified)
 
 	block.Reward = 100
-	verified, _ = Verify(&block.BlockData, &parent.BlockData)
+	verified, _ = block.Verify(&parent.BlockData)
 	fmt.Println(verified)
 
 	block.Reward = 50
 	block.Transactions[0].Amount = 0
-	verified, _ = Verify(&block.BlockData, &parent.BlockData)
+	verified, _ = block.Verify(&parent.BlockData)
 	fmt.Println(verified)
 
 	block.Transactions[0].Amount = 42
 	block.Votes[0].Candidate = "third"
-	verified, _ = Verify(&block.BlockData, &parent.BlockData)
+	verified, _ = block.Verify(&parent.BlockData)
 	fmt.Println(verified)
 
 	// Output:

@@ -240,7 +240,7 @@ func (node *AkhNode) isValidForkElement(block *Block, forkTip BlockData) (valid 
 }
 
 func (node *AkhNode) attach(bd BlockData) (err error) {
-	verified, err := Verify(&bd, &node.Head.BlockData)
+	verified, err := bd.Verify(&node.Head.BlockData)
 
 	log.Debugf("Block received: %s, verified: %v\n", bd.Hash, verified)
 	if !verified {
