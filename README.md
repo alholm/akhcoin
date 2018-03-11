@@ -3,7 +3,8 @@ Simple blockchain/cryptocurrency implementation with DPOS consensus mechanism
 
 ## Background
 Original goal of this project is educational: understand what challenges blockchain developer faces and ways to solve them.<br>
-However final result is intended to be fully functional "production ready" software, maybe will even become valuable cryptocurrency :smiley:
+However final result is intended to be fully functional "production ready" software, maybe will even become valuable cryptocurrency :smiley: <br>
+Check out the [wiki](https://github.com/alholm/akhcoin/wiki) for detailed problems and solutions description.
 
 ## Roadmap
 - see [Project](https://github.com/alholm/akhcoin/projects/1)
