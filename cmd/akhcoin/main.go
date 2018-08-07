@@ -1,16 +1,17 @@
 package main
 
 import (
-	"akhcoin/p2p"
 	"flag"
 	"fmt"
+	"github.com/alholm/akhcoin/p2p"
 	"io/ioutil"
 	console "log"
 	"net/http"
 	"os"
 
-	"akhcoin/blockchain"
 	"github.com/abiosoft/ishell"
+	"github.com/alholm/akhcoin/blockchain"
+	"github.com/alholm/akhcoin/node"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
 	"strconv"
@@ -102,9 +103,9 @@ func main() {
 		preShell.Run()
 	}
 
-	node := NewAkhNode(*port, keyBytes)
+	akhNode := node.NewAkhNode(*port, keyBytes)
 
-	startHttpServer(node, port)
+	startHttpServer(akhNode, port)
 
 	// by default, new shell includes 'exit', 'help' and 'clear' commands.
 	shell := ishell.New()
@@ -125,7 +126,7 @@ func main() {
 				return
 			}
 
-			err = node.Pay(peerId, amount)
+			err = akhNode.Pay(peerId, amount)
 			if err != nil {
 				c.Err(err)
 			}
@@ -142,7 +143,7 @@ func main() {
 				c.Err(fmt.Errorf("not enough arguments"))
 				return
 			}
-			err := node.Vote(peerId)
+			err := akhNode.Vote(peerId)
 			if err != nil {
 				c.Err(err)
 			}
@@ -157,7 +158,7 @@ func main() {
 				c.Err(fmt.Errorf("not enough arguments, see help"))
 				return
 			}
-			err := node.Host.AddPeerManually(c.Args[0], c.Args[1])
+			err := akhNode.Host.AddPeerManually(c.Args[0], c.Args[1])
 			if err != nil {
 				c.Err(err)
 			}
@@ -168,7 +169,7 @@ func main() {
 
 	shell.Run()
 
-	node.Host.Close()
+	akhNode.Host.Close()
 }
 
 func generateAndDumpKeys() (privateBytes []byte, err error) {
@@ -183,9 +184,9 @@ func generateAndDumpKeys() (privateBytes []byte, err error) {
 	return
 }
 
-func startHttpServer(node *AkhNode, port *int) {
+func startHttpServer(akhNode *node.AkhNode, port *int) {
 	viewHandler := func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "<h1>%s</h1>", node.Head.Hash)
+		fmt.Fprintf(w, "<h1>%s</h1>", akhNode.Head.Hash)
 	}
 	http.HandleFunc("/", viewHandler)
 	go http.ListenAndServe(fmt.Sprintf(":%d", *port-1000), nil)

@@ -1,7 +1,7 @@
 package consensus
 
 import (
-	"akhcoin/blockchain"
+	"github.com/alholm/akhcoin/blockchain"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"

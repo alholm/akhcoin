@@ -1,7 +1,7 @@
-package balances
+package balances //import "github.com/alholm/akhcoin/balances"
 
 import (
-	"akhcoin/blockchain"
+	"github.com/alholm/akhcoin/blockchain"
 	"sort"
 )
 
