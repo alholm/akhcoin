@@ -1,28 +1,19 @@
 package node
 
 import (
-	. "github.com/alholm/akhcoin/blockchain"
-	"github.com/alholm/akhcoin/p2p"
+	. "github.com/alholm/akhcoin/pkg/blockchain"
+	"github.com/alholm/akhcoin/internal/p2p"
 	"sync"
 	"time"
 
 	"fmt"
-	"github.com/alholm/akhcoin/balances"
-	"github.com/alholm/akhcoin/consensus"
+	"github.com/alholm/akhcoin/pkg/balances"
+	"github.com/alholm/akhcoin/pkg/consensus"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
 	"github.com/spf13/viper"
 )
-
-func init() {
-	viper.SetConfigName("config")
-	viper.AddConfigPath("../")
-	err := viper.ReadInConfig()
-	if err != nil { // Handle errors reading the config file
-		panic(fmt.Errorf("Fatal error config file: %s \n", err))
-	}
-}
 
 var log = logging.Logger("main")
 

@@ -1,8 +1,8 @@
-package p2p //import "github.com/alholm/akhcoin/p2p"
+package p2p
 
 import (
 	"context"
-	"github.com/alholm/akhcoin/blockchain"
+	"github.com/alholm/akhcoin/pkg/blockchain"
 	"io"
 	"sync"
 

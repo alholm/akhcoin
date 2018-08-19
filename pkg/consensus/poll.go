@@ -1,7 +1,7 @@
 package consensus
 
 import (
-	"github.com/alholm/akhcoin/blockchain"
+	"github.com/alholm/akhcoin/pkg/blockchain"
 	logging "github.com/ipfs/go-log"
 	"github.com/spf13/viper"
 	"sort"

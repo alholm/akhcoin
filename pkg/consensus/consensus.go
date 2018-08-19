@@ -2,7 +2,7 @@ package consensus
 
 import (
 	"fmt"
-	"github.com/alholm/akhcoin/blockchain"
+	"github.com/alholm/akhcoin/pkg/blockchain"
 	"time"
 )
 

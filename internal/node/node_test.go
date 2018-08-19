@@ -1,8 +1,8 @@
 package node
 
 import (
-	"github.com/alholm/akhcoin/blockchain"
-	"github.com/alholm/akhcoin/consensus"
+	"github.com/alholm/akhcoin/pkg/blockchain"
+	"github.com/alholm/akhcoin/pkg/consensus"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/spf13/viper"

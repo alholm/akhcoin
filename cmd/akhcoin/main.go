@@ -3,18 +3,19 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/alholm/akhcoin/p2p"
+	"github.com/alholm/akhcoin/internal/p2p"
 	"io/ioutil"
 	console "log"
 	"net/http"
 	"os"
 
 	"github.com/abiosoft/ishell"
-	"github.com/alholm/akhcoin/blockchain"
-	"github.com/alholm/akhcoin/node"
+	"github.com/alholm/akhcoin/pkg/blockchain"
+	"github.com/alholm/akhcoin/internal/node"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
 	"strconv"
+	"github.com/spf13/viper"
 )
 
 var log = logging.Logger("main")
@@ -33,6 +34,13 @@ func main() {
 	logging.SetLogLevel("p2p", "DEBUG")
 	logging.SetLogLevel("consensus", "DEBUG")
 	// logging.SetLogLevel("mdns", "DEBUG")
+
+	viper.SetConfigName("config")
+	viper.AddConfigPath("configs")
+	err := viper.ReadInConfig()
+	if err != nil { // Handle errors reading the config file
+		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+	}
 
 	port := flag.Int("p", p2p.DefaultPort,
 		fmt.Sprintf("port where to start local host, %d will be used by default", p2p.DefaultPort))
