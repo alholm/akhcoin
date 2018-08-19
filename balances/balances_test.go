@@ -1,7 +1,7 @@
 package balances
 
 import (
-	"akhcoin/blockchain"
+	"github.com/alholm/akhcoin/blockchain"
 	"testing"
 )
 

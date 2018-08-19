@@ -1,4 +1,4 @@
-package blockchain
+package blockchain //import "github.com/alholm/akhcoin/blockchain"
 
 import (
 	"encoding/binary"

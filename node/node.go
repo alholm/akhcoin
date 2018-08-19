@@ -1,14 +1,15 @@
-package main
+package node
 
 import (
-	. "akhcoin/blockchain"
-	"akhcoin/p2p"
+	. "github.com/alholm/akhcoin/blockchain"
+	"github.com/alholm/akhcoin/p2p"
 	"sync"
 	"time"
 
-	"akhcoin/balances"
-	"akhcoin/consensus"
 	"fmt"
+	"github.com/alholm/akhcoin/balances"
+	"github.com/alholm/akhcoin/consensus"
+	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-crypto"
 	"github.com/libp2p/go-libp2p-peer"
 	"github.com/spf13/viper"
@@ -16,12 +17,14 @@ import (
 
 func init() {
 	viper.SetConfigName("config")
-	viper.AddConfigPath(".")
+	viper.AddConfigPath("../")
 	err := viper.ReadInConfig()
 	if err != nil { // Handle errors reading the config file
 		panic(fmt.Errorf("Fatal error config file: %s \n", err))
 	}
 }
+
+var log = logging.Logger("main")
 
 type AkhNode struct {
 	Host             p2p.AkhHost
