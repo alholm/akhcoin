@@ -47,8 +47,8 @@ github.com/libp2p/go-addr-util v1.2.5 h1:leZ1XUvj6YpI/DBegYeVacDa+l7fSdJbjT1tz62
 github.com/libp2p/go-addr-util v1.2.5/go.mod h1:doh2auL/Rkfq1xHxDrWJGHZ8yDojPerOZoPu9XVwRB8=
 github.com/libp2p/go-flow-metrics v0.2.0 h1:GAJSg/g+xLuc7vz0RN96pRA9q/n5b5+Hs6SndagmOR4=
 github.com/libp2p/go-flow-metrics v0.2.0/go.mod h1:Iv1GH0sG8DtYN3SVJ2eG221wMiNpZxBdp967ls1g+k8=
-github.com/libp2p/go-libp2p v5.0.11+incompatible h1:eNgegQUsPUCBHDLinIm2RD6t27gMUBsPjQL3T8rY2bA=
-github.com/libp2p/go-libp2p v5.0.11+incompatible/go.mod h1:CyUlFa6Mw04PkmMg8gBIlHUl8j3TrEiA6oFiF4SgD8w=
+github.com/libp2p/go-libp2p v5.0.13+incompatible h1:pEu7vd2PLodbyA7YFEAp0f1QRlYjdyN/yiF5GTVS/9k=
+github.com/libp2p/go-libp2p v5.0.13+incompatible/go.mod h1:CyUlFa6Mw04PkmMg8gBIlHUl8j3TrEiA6oFiF4SgD8w=
 github.com/libp2p/go-libp2p-circuit v2.0.8+incompatible h1:d6Rnnp2Ow5PN0OFIvCNk++DIV57cHZmpDnDY38NbS3c=
 github.com/libp2p/go-libp2p-circuit v2.0.8+incompatible/go.mod h1:DH3RV0Tb4cHZAdSsdNOitADXTqRiFZxJmSk7mMcCFN4=
 github.com/libp2p/go-libp2p-conn v0.0.0-20180119205146-503057fe3f68 h1:obcNAk3ojc3JvrbtVLV4yP8iF4O8ZlntuOSC2jsNziI=

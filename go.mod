@@ -23,7 +23,7 @@ require (
 	github.com/jbenet/goprocess v0.0.0-20160826012719-b497e2f366b8 // indirect
 	github.com/libp2p/go-addr-util v1.2.5 // indirect
 	github.com/libp2p/go-flow-metrics v0.2.0 // indirect
-	github.com/libp2p/go-libp2p v5.0.11+incompatible
+	github.com/libp2p/go-libp2p v5.0.13+incompatible
 	github.com/libp2p/go-libp2p-circuit v2.0.8+incompatible // indirect
 	github.com/libp2p/go-libp2p-conn v0.0.0-20180119205146-503057fe3f68 // indirect
 	github.com/libp2p/go-libp2p-crypto v1.5.0
